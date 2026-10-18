@@ -279,14 +279,20 @@ export class GameScene extends Phaser.Scene {
     this.paintBackButtons();
   }
 
+  /** Смена рубашки: setTexture + повторный setDisplaySize (фикс «взрыва» текстур). */
+  private applyBack(img: Phaser.GameObjects.Image): void {
+    if (img.texture.key !== this.backKey) img.setTexture(this.backKey);
+    img.setDisplaySize(CARD_W, CARD_H);
+  }
+
   private paintBackButtons(): void {
     this.backButtons.forEach((btn, idx) => {
       const active = CARD_BACKS[idx].key === this.backKey;
       btn.setBackgroundColor(active ? '#f0c94a' : '#8fae94');
       btn.setFontStyle(active ? 'bold' : 'normal');
     });
-    for (const v of this.views) v.back.setTexture(this.backKey);
-    if (this.stockBack) this.stockBack.setTexture(this.backKey);
+    for (const v of this.views) this.applyBack(v.back);
+    if (this.stockBack) this.applyBack(this.stockBack);
   }
 
   private buildButtons(): void {
@@ -442,7 +448,8 @@ export class GameScene extends Phaser.Scene {
         view.suit.setText(SUITS[card.suit]).setColor(this.suitColor(card.suit));
         view.container.setAlpha(1);
       } else {
-        view.back.setTexture(this.backKey).setVisible(true);
+        this.applyBack(view.back);
+        view.back.setVisible(true);
         view.label.setVisible(false);
         view.suit.setVisible(false);
         view.container.setAlpha(1);
