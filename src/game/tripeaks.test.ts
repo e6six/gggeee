@@ -8,6 +8,7 @@ import {
   rankMatches,
   replaySolution,
   starsForStockLeft,
+  makeBoosterCards,
 } from './tripeaks';
 
 describe('правило ±1 по кругу', () => {
@@ -72,5 +73,15 @@ describe('мета: звёзды и монеты', () => {
   });
   it('монеты растут с остатком колоды и серией', () => {
     expect(coinsForWin(10, 5)).toBeGreaterThan(coinsForWin(0, 0));
+  });
+});
+
+describe('бустер +5 карт', () => {
+  it('карты идут цепочкой ±1 друг за другом', () => {
+    const cards = makeBoosterCards(createRng(5), 5);
+    expect(cards).toHaveLength(5);
+    for (let i = 1; i < cards.length; i++) {
+      expect(rankMatches(cards[i].rank, cards[i - 1].rank)).toBe(true);
+    }
   });
 });

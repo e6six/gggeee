@@ -168,3 +168,14 @@ export function starsForStockLeft(stockLeft: number): 1 | 2 | 3 {
 export function coinsForWin(stockLeft: number, bestStreak: number): number {
   return 20 + stockLeft * 2 + bestStreak * 3;
 }
+
+/** Карты бустера «+5»: цепочка ±1 друг за другом, в порядке добора. */
+export function makeBoosterCards(rng: () => number, count = 5): CardData[] {
+  const cards: CardData[] = [];
+  let rank = Math.floor(rng() * 13);
+  for (let i = 0; i < count; i++) {
+    cards.push({ rank, suit: Math.floor(rng() * 4) });
+    rank = (rank + (rng() < 0.5 ? -1 : 1) + 13) % 13;
+  }
+  return cards;
+}

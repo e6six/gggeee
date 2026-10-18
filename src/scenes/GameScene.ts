@@ -4,6 +4,7 @@ import {
   coinsForWin,
   createRng,
   generateGame,
+  makeBoosterCards,
   isOpen as coreIsOpen,
   isPlayable as coreIsPlayable,
   starsForStockLeft,
@@ -15,6 +16,25 @@ interface Progress {
   level: number;
   totalStars: number;
   coins: number;
+  boosters: { undo: number; plus5: number; wild: number };
+}
+
+const DEFAULT_PROGRESS: Progress = {
+  level: 1,
+  totalStars: 0,
+  coins: 0,
+  boosters: { undo: 3, plus5: 2, wild: 1 },
+};
+
+type BoosterKind = 'undo' | 'plus5' | 'wild';
+
+interface MoveSnapshot {
+  removedIndex: number | null;
+  drawn: CardData | null;
+  prevWaste: CardData;
+  score: number;
+  streak: number;
+  bestStreak: number;
 }
 
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -48,7 +68,10 @@ export class GameScene extends Phaser.Scene {
   private movesMade = false;
   private wasOpen: boolean[] = new Array(28).fill(false);
 
-  private progress: Progress = { level: 1, totalStars: 0, coins: 0 };
+  private progress: Progress = structuredClone(DEFAULT_PROGRESS);
+  private history: MoveSnapshot[] = [];
+  private wildActive = false;
+  private boosterButtons = new Map<BoosterKind, Phaser.GameObjects.Text>();
   private score = 0;
   private streak = 0;
   private bestStreak = 0;
@@ -113,16 +136,21 @@ export class GameScene extends Phaser.Scene {
     this.buildBoard();
     this.buildStockAndWaste();
     this.buildButtons();
+    this.buildBoosters();
     this.buildSettings();
     this.layout();
     this.scale.on('resize', () => this.layout());
 
     this.newGame();
-    void loadSave<Progress>({ level: 1, totalStars: 0, coins: 0 }).then((saved) => {
-      if (saved.level > 1 || saved.totalStars > 0 || saved.coins > 0) {
-        this.progress = saved;
-        this.newGame();
-      }
+    void loadSave<Progress>(structuredClone(DEFAULT_PROGRESS)).then((saved) => {
+      const merged: Progress = {
+        ...structuredClone(DEFAULT_PROGRESS),
+        ...saved,
+        boosters: { ...DEFAULT_PROGRESS.boosters, ...(saved.boosters ?? {}) },
+      };
+      this.progress = merged;
+      if (merged.level > 1 || merged.totalStars > 0 || merged.coins > 0) this.newGame();
+      else this.paintBoosters();
     });
   }
 
@@ -291,6 +319,136 @@ export class GameScene extends Phaser.Scene {
     this.restartButton.on('pointerdown', () => this.onRestart());
   }
 
+  // --- Бустеры -----------------------------------------------------------------
+
+  private buildBoosters(): void {
+    const defs: { kind: BoosterKind; label: string }[] = [
+      { kind: 'undo', label: '↩ Отмена' },
+      { kind: 'plus5', label: '＋5 карт' },
+      { kind: 'wild', label: '★ Дикая' },
+    ];
+    for (const d of defs) {
+      const btn = this.add
+        .text(0, 0, d.label, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '17px',
+          color: '#10251c',
+          backgroundColor: '#8fae94',
+          padding: { x: 14, y: 10 },
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+      btn.on('pointerdown', () => this.useBooster(d.kind));
+      this.boosterButtons.set(d.kind, btn);
+    }
+    this.paintBoosters();
+  }
+
+  private paintBoosters(): void {
+    const labels: Record<BoosterKind, string> = {
+      undo: `↩ Отмена · ${this.progress.boosters.undo}`,
+      plus5: `＋5 карт · ${this.progress.boosters.plus5}`,
+      wild: `★ Дикая · ${this.progress.boosters.wild}`,
+    };
+    for (const [kind, btn] of this.boosterButtons) {
+      btn.setText(labels[kind]);
+      const count = this.progress.boosters[kind];
+      const armed = kind === 'wild' && this.wildActive;
+      btn.setBackgroundColor(armed ? '#f0c94a' : count > 0 ? '#8fae94' : '#5d7263');
+      btn.setAlpha(count > 0 || armed ? 1 : 0.75);
+      btn.setFontStyle(armed ? 'bold' : 'normal');
+    }
+  }
+
+  /** Списывает бустер или покупает за 40 монет. false — ни того, ни другого. */
+  private takeBooster(kind: BoosterKind): boolean {
+    if (this.progress.boosters[kind] > 0) {
+      this.progress.boosters[kind] -= 1;
+      return true;
+    }
+    if (this.progress.coins >= 40) {
+      this.progress.coins -= 40;
+      this.setHint('Бустер куплен за 40 🪙.');
+      return true;
+    }
+    this.setHint('Бустеры кончились. Нужно 40 🪙 на покупку — монеты дают победы.');
+    return false;
+  }
+
+  private useBooster(kind: BoosterKind): void {
+    if (kind === 'undo') this.useUndo();
+    else if (kind === 'plus5') this.usePlus5();
+    else this.useWild();
+  }
+
+  private useUndo(): void {
+    if (this.gameOver === 'win') {
+      this.setHint('Партия уже выиграна — отмена недоступна.');
+      return;
+    }
+    const snap = this.history[this.history.length - 1];
+    if (!snap) {
+      this.setHint('Отменять пока нечего: ходов ещё не было.');
+      return;
+    }
+    if (!this.takeBooster('undo')) return;
+    this.history.pop();
+    if (snap.removedIndex !== null) this.cards[snap.removedIndex].removed = false;
+    if (snap.drawn) this.stock.push(snap.drawn);
+    this.waste = snap.prevWaste;
+    this.score = snap.score;
+    this.streak = snap.streak;
+    this.bestStreak = snap.bestStreak;
+    if (this.gameOver === 'lose') {
+      this.gameOver = null;
+      this.restartButton.setText('↻ Новая игра');
+    }
+    void storeSave(this.progress);
+    this.paintBoosters();
+    this.refresh();
+    this.setHint('Ход отменён.');
+  }
+
+  private usePlus5(): void {
+    if (this.gameOver) return;
+    if (!this.takeBooster('plus5')) return;
+    const cards = makeBoosterCards(createRng((Date.now() & 0xffffff) >>> 0), 5);
+    this.stock.push(...[...cards].reverse());
+    void storeSave(this.progress);
+    this.paintBoosters();
+    this.refresh();
+    this.setHint('В колоду добавлено 5 карт цепочкой ±1.');
+  }
+
+  private useWild(): void {
+    if (this.gameOver) return;
+    if (this.wildActive) {
+      this.wildActive = false;
+      this.paintBoosters();
+      this.refresh();
+      this.setHint('Дикая карта отменена (бустер не потрачен).');
+      return;
+    }
+    if (this.progress.boosters.wild <= 0 && this.progress.coins < 40) {
+      this.setHint('Диких карт нет. Нужно 40 🪙 на покупку.');
+      return;
+    }
+    this.wildActive = true;
+    this.paintBoosters();
+    this.refresh();
+    this.setHint('Дикая карта активна: тапните ЛЮБУЮ открытую карту. Списание — при использовании.');
+  }
+
+  private pushHistory(snap: Omit<MoveSnapshot, 'prevWaste' | 'score' | 'streak' | 'bestStreak'>): void {
+    this.history.push({
+      ...snap,
+      prevWaste: this.waste,
+      score: this.score,
+      streak: this.streak,
+      bestStreak: this.bestStreak,
+    });
+  }
+
   // --- Настройки ---------------------------------------------------------------
 
   private buildSettings(): void {
@@ -363,7 +521,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
     this.resetButton.on('pointerdown', () => {
-      this.progress = { level: 1, totalStars: 0, coins: 0 };
+      this.progress = structuredClone(DEFAULT_PROGRESS);
       void storeSave(this.progress);
       this.newGame();
       this.toggleSettings(false);
@@ -513,6 +671,12 @@ export class GameScene extends Phaser.Scene {
     this.applyBack(this.stockBack);
 
     this.hintText.setPosition(W / 2, stockY + stockHalf + 34).setWordWrapWidth(Math.min(680, W - 40));
+    {
+      const kinds: BoosterKind[] = ['undo', 'plus5', 'wild'];
+      kinds.forEach((kind, idx) => {
+        this.boosterButtons.get(kind)?.setPosition(W / 2 + (idx - 1) * 190, stockY + stockHalf + 92);
+      });
+    }
 
     if (this.settingsPanel?.visible) this.layoutSettings();
     if (this.cards.length === 28) this.refresh();
@@ -538,7 +702,10 @@ export class GameScene extends Phaser.Scene {
     this.streak = 0;
     this.bestStreak = 0;
     this.gameOver = null;
+    this.history = [];
+    this.wildActive = false;
     this.restartButton.setText('↻ Новая игра');
+    this.paintBoosters();
     this.refresh();
     this.updateMeta();
     this.setHint('Тапните по подсвеченной карте на ±1 от сброса.\nНет хода — тапните по колоде.');
@@ -554,7 +721,8 @@ export class GameScene extends Phaser.Scene {
 
   private onCardTap(i: number): void {
     if (this.gameOver) return;
-    if (!this.isPlayable(i)) {
+    const wildPlay = this.wildActive && !this.cards[i].removed && this.isOpen(i);
+    if (!this.isPlayable(i) && !wildPlay) {
       if (!this.cards[i].removed && !this.isOpen(i)) this.setHint('Эта карта закрыта: сначала снимите карты поверх неё.');
       else if (!this.cards[i].removed) this.setHint('Не подходит: нужна карта на 1 выше или ниже сброса (после K идёт A).');
       return;
@@ -562,6 +730,15 @@ export class GameScene extends Phaser.Scene {
     if (!this.movesMade) {
       this.movesMade = true;
       gameplayStart();
+    }
+    this.pushHistory({ removedIndex: i, drawn: null });
+    if (wildPlay) {
+      if (!this.takeBooster('wild')) {
+        this.history.pop();
+        return;
+      }
+      this.wildActive = false;
+      this.paintBoosters();
     }
     this.cards[i].removed = true;
     this.waste = this.cards[i];
@@ -577,7 +754,9 @@ export class GameScene extends Phaser.Scene {
       this.movesMade = true;
       gameplayStart();
     }
-    this.waste = this.stock.pop()!;
+    const drawn = this.stock.pop()!;
+    this.pushHistory({ removedIndex: null, drawn });
+    this.waste = drawn;
     this.streak = 0;
     this.afterMove();
   }
@@ -592,9 +771,12 @@ export class GameScene extends Phaser.Scene {
       const coins = coinsForWin(this.stock.length, this.bestStreak);
       this.progress.totalStars += stars;
       this.progress.coins += coins;
+      const kinds: BoosterKind[] = ['undo', 'plus5', 'wild'];
+      this.progress.boosters[kinds[Math.floor(Math.random() * kinds.length)]] += 1;
       void storeSave(this.progress);
+      this.paintBoosters();
       this.restartButton.setText('▶ Следующий уровень');
-      this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙`);
+      this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙 +1 бустер`);
       this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}. Следующий уровень — в настройках ⚙.`);
       this.updateMeta();
       return;
@@ -627,7 +809,7 @@ export class GameScene extends Phaser.Scene {
       view.container.setVisible(!card.removed);
       if (card.removed) continue;
       const open = this.isOpen(i);
-      const playable = this.isPlayable(i);
+      const playable = this.isPlayable(i) || (this.wildActive && open);
       if (open && !this.wasOpen[i] && this.movesMade) {
         view.container.setScale(0.15, 1);
         this.tweens.add({ targets: view.container, scaleX: 1, duration: 180, ease: 'Quad.easeOut' });
