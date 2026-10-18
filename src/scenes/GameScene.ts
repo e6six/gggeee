@@ -3,8 +3,8 @@ import { gameplayStart, gameplayStop } from '../yandex/sdk';
 
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const SUITS = ['♠', '♥', '♦', '♣'];
-const CARD_W = 58;
-const CARD_H = 80;
+const CARD_W = 64;
+const CARD_H = 92;
 
 interface CardModel {
   rank: number; // 0..12
@@ -16,9 +16,17 @@ interface CardModel {
 interface CardView {
   container: Phaser.GameObjects.Container;
   bg: Phaser.GameObjects.Rectangle;
+  back: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   suit: Phaser.GameObjects.Text;
 }
+
+/** Сгенерированные рубашки (docs/art/prompts.md), выбор — кнопками под полем. */
+const CARD_BACKS = [
+  { key: 'back-bordeaux', file: 'assets/cards/back-bordeaux.png', name: 'Бордо' },
+  { key: 'back-travel', file: 'assets/cards/back-travel.png', name: 'Солнце' },
+  { key: 'back-sakura', file: 'assets/cards/back-sakura.png', name: 'Сакура' },
+] as const;
 
 /**
  * ИГРАБЕЛЬНЫЙ ПРОТОТИП TriPeaks (не финальное ядро этапа 1).
@@ -41,6 +49,9 @@ export class GameScene extends Phaser.Scene {
   private waste!: CardModel;
   private movesMade = false;
 
+  private stockBack!: Phaser.GameObjects.Image;
+  private backKey: string = CARD_BACKS[0].key;
+  private backButtons: Phaser.GameObjects.Text[] = [];
   private stockView!: Phaser.GameObjects.Container;
   private stockLabel!: Phaser.GameObjects.Text;
   private wasteLabel!: Phaser.GameObjects.Text;
@@ -52,8 +63,26 @@ export class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
+  preload(): void {
+    for (const b of CARD_BACKS) this.load.image(b.key, b.file);
+  }
+
   create(): void {
     const { width } = this.scale;
+    this.backKey = localStorage.getItem('solitaire-journey.cardBack') ?? CARD_BACKS[0].key;
+    if (!CARD_BACKS.some((b) => b.key === this.backKey)) this.backKey = CARD_BACKS[0].key;
+
+    // Декоративная рамка стола: поле не должно «висеть» в пустоте.
+    const deco = this.add.graphics();
+    deco.lineStyle(2, 0x2c4a38, 0.9);
+    deco.strokeRoundedRect(14, 130, width - 28, 470, 18);
+    deco.lineStyle(1, 0xf0c94a, 0.35);
+    deco.strokeRoundedRect(22, 138, width - 44, 454, 14);
+    deco.fillStyle(0xf0c94a, 0.08);
+    deco.fillCircle(70, 180, 46);
+    deco.fillCircle(width - 70, 180, 46);
+    deco.fillCircle(70, 550, 46);
+    deco.fillCircle(width - 70, 550, 46);
 
     this.add
       .text(width / 2, 44, 'Пасьянс-путешествие', {
@@ -89,18 +118,23 @@ export class GameScene extends Phaser.Scene {
 
   // --- Построение поля -----------------------------------------------------
 
-  /** Координаты 28 карт: 3 пика (3+6+9) и нижний ряд из 10. */
+  /**
+   * Раскладка: классическая геометрия TriPeaks с шагом 67px.
+   * Нижний ряд — 10 карт на всю ширину поля; карты 64×92,
+   * ряды перекрываются лишь на ~14px по вертикали.
+   */
   private positions(): { x: number; y: number }[] {
     const pos: { x: number; y: number }[] = [];
-    const peaks = [168, 360, 552];
-    for (const px of peaks) pos.push({ x: px, y: 205 }); // ряд 0: вершины
-    for (const px of peaks) {
-      pos.push({ x: px - 42, y: 272 }, { x: px + 42, y: 272 }); // ряд 1
+    const rowsY = [232, 310, 388, 466];
+    const centers: number[][] = [
+      [159, 360, 561],
+      [126, 193, 327, 394, 528, 595],
+      [92, 159, 226, 293, 360, 427, 494, 561, 628],
+      Array.from({ length: 10 }, (_, i) => 59 + i * 67),
+    ];
+    for (let row = 0; row < 4; row++) {
+      for (const x of centers[row]) pos.push({ x, y: rowsY[row] });
     }
-    for (const px of peaks) {
-      pos.push({ x: px - 84, y: 339 }, { x: px, y: 339 }, { x: px + 84, y: 339 }); // ряд 2
-    }
-    for (let i = 0; i < 10; i++) pos.push({ x: 66 + i * 65, y: 412 }); // ряд 3
     return pos;
   }
 
@@ -134,25 +168,29 @@ export class GameScene extends Phaser.Scene {
       const label = this.add
         .text(-CARD_W / 2 + 7, -CARD_H / 2 + 4, '', {
           fontFamily: 'Arial, sans-serif',
-          fontSize: '20px',
+          fontSize: '22px',
           fontStyle: 'bold',
           color: '#20301f',
         })
         .setOrigin(0, 0);
       const suit = this.add
-        .text(0, 8, '', { fontFamily: 'Arial, sans-serif', fontSize: '30px', color: '#20301f' })
+        .text(0, 8, '', { fontFamily: 'Arial, sans-serif', fontSize: '34px', color: '#20301f' })
         .setOrigin(0.5);
-      const container = this.add
-        .container(pos[i].x, pos[i].y, [bg, label, suit])
-        .setSize(CARD_W, CARD_H)
-        .setInteractive({ useHandCursor: true });
-      container.on('pointerdown', () => this.onCardTap(i));
-      this.views.push({ container, bg, label, suit });
+      const back = this.add
+        .image(0, 0, this.backKey)
+        .setDisplaySize(CARD_W, CARD_H)
+        .setVisible(false);
+      const container = this.add.container(pos[i].x, pos[i].y, [bg, label, suit, back]);
+      bg.setInteractive({ useHandCursor: true });
+      bg.on('pointerdown', () => this.onCardTap(i));
+      back.setInteractive({ useHandCursor: true });
+      back.on('pointerdown', () => this.onCardTap(i));
+      this.views.push({ container, bg, back, label, suit });
     }
   }
 
   private buildStockAndWaste(): void {
-    const y = 610;
+    const y = 700;
     // Колода (рубашка).
     const stockBg = this.add.rectangle(0, 0, CARD_W, CARD_H, 0x8f2f2f).setStrokeStyle(2, 0xf5e9c9);
     this.stockLabel = this.add
@@ -170,7 +208,10 @@ export class GameScene extends Phaser.Scene {
         color: '#b9d3a8',
       })
       .setOrigin(0.5);
-    this.stockView = this.add.container(230, y, [stockBg, this.stockLabel, stockTitle]);
+    this.stockBack = this.add.image(0, 0, this.backKey).setDisplaySize(CARD_W, CARD_H);
+    this.stockView = this.add.container(290, y, [stockBg, this.stockBack, this.stockLabel, stockTitle]);
+    this.stockBack.setInteractive({ useHandCursor: true });
+    this.stockBack.on('pointerdown', () => this.onStockTap());
     stockBg.setInteractive({ useHandCursor: true });
     stockBg.on('pointerdown', () => this.onStockTap());
 
@@ -185,7 +226,7 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0, 0);
     this.wasteSuit = this.add
-      .text(0, 8, '', { fontFamily: 'Arial, sans-serif', fontSize: '30px', color: '#20301f' })
+      .text(0, 8, '', { fontFamily: 'Arial, sans-serif', fontSize: '34px', color: '#20301f' })
       .setOrigin(0.5);
     const wasteTitle = this.add
       .text(0, CARD_H / 2 + 18, 'Сброс', {
@@ -194,10 +235,10 @@ export class GameScene extends Phaser.Scene {
         color: '#b9d3a8',
       })
       .setOrigin(0.5);
-    this.add.container(360, y, [wasteBg, this.wasteLabel, this.wasteSuit, wasteTitle]);
+    this.add.container(410, y, [wasteBg, this.wasteLabel, this.wasteSuit, wasteTitle]);
 
     this.hintText = this.add
-      .text(360, 740, '', {
+      .text(360, 830, '', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '16px',
         color: '#b9d3a8',
@@ -207,9 +248,50 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
   }
 
+  private buildBackSelector(): void {
+    this.add
+      .text(360, 992, 'Рубашка карт:', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '15px',
+        color: '#b9d3a8',
+      })
+      .setOrigin(0.5);
+    CARD_BACKS.forEach((b, idx) => {
+      const btn = this.add
+        .text(165 + idx * 195, 1032, b.name, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '17px',
+          color: '#10251c',
+          backgroundColor: '#8fae94',
+          padding: { x: 16, y: 9 },
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+      btn.on('pointerdown', () => {
+        this.backKey = b.key;
+        localStorage.setItem('solitaire-journey.cardBack', b.key);
+        this.refresh();
+        this.paintBackButtons();
+      });
+      this.backButtons.push(btn);
+    });
+    this.paintBackButtons();
+  }
+
+  private paintBackButtons(): void {
+    this.backButtons.forEach((btn, idx) => {
+      const active = CARD_BACKS[idx].key === this.backKey;
+      btn.setBackgroundColor(active ? '#f0c94a' : '#8fae94');
+      btn.setFontStyle(active ? 'bold' : 'normal');
+    });
+    for (const v of this.views) v.back.setTexture(this.backKey);
+    if (this.stockBack) this.stockBack.setTexture(this.backKey);
+  }
+
   private buildButtons(): void {
+    this.buildBackSelector();
     const restart = this.add
-      .text(360, 830, '↻ Новая игра', {
+      .text(360, 925, '↻ Новая игра', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '20px',
         color: '#10251c',
@@ -351,15 +433,18 @@ export class GameScene extends Phaser.Scene {
       const open = this.isOpen(i);
       const playable = this.isPlayable(i);
       if (open) {
+        view.back.setVisible(false);
+        view.label.setVisible(true);
+        view.suit.setVisible(true);
         view.bg.setFillStyle(0xf7f1de).setStrokeStyle(playable ? 4 : 2, playable ? 0xf0c94a : 0x2c4a38);
         view.label.setText(RANKS[card.rank]).setColor(this.suitColor(card.suit));
         view.suit.setText(SUITS[card.suit]).setColor(this.suitColor(card.suit));
         view.container.setAlpha(1);
       } else {
-        view.bg.setFillStyle(0x8f2f2f).setStrokeStyle(2, 0xf5e9c9);
-        view.label.setText('');
-        view.suit.setText('✦').setColor('#f0c94a');
-        view.container.setAlpha(0.96);
+        view.back.setTexture(this.backKey).setVisible(true);
+        view.label.setVisible(false);
+        view.suit.setVisible(false);
+        view.container.setAlpha(1);
       }
       view.container.setScale(playable ? 1.06 : 1);
     }

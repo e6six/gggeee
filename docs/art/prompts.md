@@ -15,7 +15,9 @@ no photorealistic hands, no cluttered center composition
 
 | # | Ассет | Файл | Промпт | Модель/seed | Статус |
 |---|---|---|---|---|---|
-| 1 | Рубашка карты | `assets/cards/card-back.png` | `playing card back design, deep burgundy #8f2f2f background, elegant thin gold border, vintage travel map compass rose ornament in center, symmetrical, flat vector illustration, clean, high contrast` | — | ⬜ запланировано |
+| 1 | Рубашка «Бордо» | `public/assets/cards/back-bordeaux.png` | `single vertical playing card back, deep burgundy, ornate gold filigree, diamond center, damask pattern, flat vector, no text` (полный промпт — в истории генерации 2026-10-18) | выбрана пользователем, вариант 2/2 | ✅ в игре |
+| 1a | Рубашка «Солнце» | `public/assets/cards/back-travel.png` | `single vertical playing card back, emerald green, golden sun and sea waves medallion, olive branches, flat vector, no text` (первая пара отвергнута, выбрана вторая генерация, вариант 1/2) | выбрана пользователем | ✅ в игре |
+| 1b | Рубашка «Сакура» | `public/assets/cards/back-sakura.png` | `single vertical playing card back, dark navy, pink sakura branches, seigaiha waves, golden circle, flat vector, no text` | выбрана пользователем, вариант 1/2 | ✅ в игре |
 | 2 | Лицо карты (фон) | `assets/cards/card-face.png` | `blank playing card face, warm ivory #f7f1de, subtle paper texture, thin dark green rounded border, completely empty center, flat vector, minimal` (ранги/масти рисует код поверх) | — | ⬜ |
 | 3 | Фон стола: Средиземноморье | `assets/bg/bg-mediterranean.png` | `dark green felt card table background, Mediterranean travel theme ornaments only at edges: olive branches, sea waves, vintage postcard stamps in corners, empty dark center, flat vector illustration, muted warm colors` | — | ⬜ |
 | 4 | Фон стола: Япония | `assets/bg/bg-japan.png` | `dark green felt card table background, Japanese travel theme ornaments only at edges: sakura branches, seigaiha waves, red sun stamp in corner, empty dark center, flat vector illustration, muted warm colors` | — | ⬜ |
@@ -32,3 +34,8 @@ no photorealistic hands, no cluttered center composition
 2. Вписать модель и seed в таблицу, статус → ✅, имя файла — как в таблице.
 3. Проверить на реальном телефоне: ранг поверх лица карты читается с 40 см.
 4. `npm run check:size` не должен ругаться на имя файла.
+
+> 2026-10-18: три рубашки выше сгенерированы, выбраны пользователем из пар вариантов,
+> обрезаны под карту и уменьшены до 256×368 (~200 КБ каждая) — `public/assets/cards/`.
+> В игре переключаются кнопками «Бордо / Солнце / Сакура», выбор хранится в localStorage.
+> Лица карт намеренно рисует код (крупные ранги, читаемость 45+), а не генератор.
