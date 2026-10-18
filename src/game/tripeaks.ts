@@ -9,9 +9,16 @@ export interface CardData {
   suit: number; // 0..3
 }
 
+export type Obstacle = 'ice' | 'lock';
+
 export interface TableauCard extends CardData {
   removed: boolean;
   blockers: number[];
+  obstacle?: Obstacle;
+  /** Для льда: сколько раз карту надо сыграть, прежде чем она уйдёт. */
+  iceHits?: number;
+  /** Для замка: откроется после стольких снятых карт. */
+  lockThreshold?: number;
 }
 
 export type SolutionAction =
@@ -67,12 +74,31 @@ export function rankMatches(cardRank: number, wasteRank: number): boolean {
   return d === 1 || d === 12;
 }
 
+export function removedCount(tableau: TableauCard[]): number {
+  return tableau.filter((c) => c.removed).length;
+}
+
+export function isUnlocked(tableau: TableauCard[], index: number): boolean {
+  const card = tableau[index];
+  if (card.obstacle !== 'lock') return true;
+  return removedCount(tableau) >= (card.lockThreshold ?? 0);
+}
+
 export function isPlayable(tableau: TableauCard[], index: number, waste: CardData): boolean {
   return (
     !tableau[index].removed &&
     isOpen(tableau, index) &&
+    isUnlocked(tableau, index) &&
     rankMatches(tableau[index].rank, waste.rank)
   );
+}
+
+/** Препятствия по уровню внутри 30-уровневого цикла регионов. */
+export function obstaclesForLevel(level: number): { ice: number; locks: number } {
+  const inCycle = ((level - 1) % 30) + 1;
+  if (inCycle <= 10) return { ice: 0, locks: 0 };
+  if (inCycle <= 20) return { ice: Math.min(3 + Math.floor((inCycle - 11) / 3), 5), locks: 0 };
+  return { ice: 4, locks: inCycle >= 25 ? 3 : 2 };
 }
 
 function shuffled<T>(arr: T[], rng: () => number): T[] {
@@ -93,7 +119,10 @@ function shuffled<T>(arr: T[], rng: () => number): T[] {
  * колоды. Порядок действий запоминается в `solution`: следуя ему, игрок
  * всегда может выиграть — это проверяют тесты на 1000 сидах.
  */
-export function generateGame(rng: () => number): GeneratedGame {
+export function generateGame(
+  rng: () => number,
+  obstacles: { ice: number; locks: number } = { ice: 0, locks: 0 },
+): GeneratedGame {
   const chain: number[] = [Math.floor(rng() * 13)];
   for (let i = 1; i < 52; i++) {
     const step = rng() < 0.5 ? -1 : 1;
@@ -134,6 +163,26 @@ export function generateGame(rng: () => number): GeneratedGame {
     }
   }
 
+  // Препятствия: лёд — на карты вне пиков, замки — только на вершины
+  // (они снимаются последними, порог 15 снятий к тому моменту пройден).
+  if (obstacles.ice > 0) {
+    const candidates = shuffled(
+      Array.from({ length: 19 }, (_, i) => 9 + i),
+      rng,
+    );
+    for (const idx of candidates.slice(0, obstacles.ice)) {
+      tableau[idx].obstacle = 'ice';
+      tableau[idx].iceHits = 1;
+    }
+  }
+  if (obstacles.locks > 0) {
+    const peaks = shuffled([0, 1, 2], rng);
+    for (const idx of peaks.slice(0, obstacles.locks)) {
+      tableau[idx].obstacle = 'lock';
+      tableau[idx].lockThreshold = 15;
+    }
+  }
+
   // pop() должен отдавать карты в порядке задуманных доборов.
   const stock = [...stockDrawOrder].reverse();
   return { tableau, stock, waste, solution };
@@ -150,6 +199,12 @@ export function replaySolution(game: GeneratedGame): boolean {
       if (!card) return false;
       waste = card;
     } else {
+      const card = tableau[action.index];
+      // Замок к моменту снятия вершин открыт по построению (порог 15 < 25).
+      while (card.obstacle === 'ice' && (card.iceHits ?? 0) > 0) {
+        if (!isPlayable(tableau, action.index, waste)) return false;
+        card.iceHits = (card.iceHits ?? 0) - 1;
+      }
       if (!isPlayable(tableau, action.index, waste)) return false;
       tableau[action.index].removed = true;
       waste = tableau[action.index];

@@ -10,6 +10,8 @@ import {
   replaySolution,
   starsForStockLeft,
   makeBoosterCards,
+  obstaclesForLevel,
+  isUnlocked,
 } from './tripeaks';
 
 describe('правило ±1 по кругу', () => {
@@ -95,5 +97,40 @@ describe('регионы путешествия', () => {
     expect(regionForLevel(21).region.name).toBe('Старая Европа');
     expect(regionForLevel(31).region.name).toBe('Средиземноморье');
     expect(regionForLevel(31).cycle).toBe(2);
+  });
+});
+
+describe('препятствия и кривая сложности', () => {
+  it('по уровням: 1-10 чисто, 11-20 лёд, 21+ лёд и замки', () => {
+    expect(obstaclesForLevel(5)).toEqual({ ice: 0, locks: 0 });
+    expect(obstaclesForLevel(15).ice).toBeGreaterThan(0);
+    expect(obstaclesForLevel(15).locks).toBe(0);
+    expect(obstaclesForLevel(27)).toEqual({ ice: 4, locks: 3 });
+    expect(obstaclesForLevel(35)).toEqual({ ice: 0, locks: 0 });
+  });
+
+  it('партии с препятствиями остаются проходимыми (300 сидов)', () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const game = generateGame(createRng(seed * 31), obstaclesForLevel(27));
+      expect(replaySolution(game), `seed=${seed}`).toBe(true);
+      const locked = game.tableau.filter((c) => c.obstacle === 'lock');
+      expect(locked).toHaveLength(3);
+      expect(locked.every((c) => game.tableau.indexOf(c) <= 2)).toBe(true);
+    }
+  });
+
+  it('замок закрыт до порога снятых карт', () => {
+    const game = generateGame(createRng(3), { ice: 0, locks: 1 });
+    const idx = game.tableau.findIndex((c) => c.obstacle === 'lock');
+    expect(isUnlocked(game.tableau, idx)).toBe(false);
+    let marked = 0;
+    for (const c of game.tableau) {
+      if (marked >= 15) break;
+      if (c.obstacle !== 'lock') {
+        c.removed = true;
+        marked++;
+      }
+    }
+    expect(isUnlocked(game.tableau, idx)).toBe(true);
   });
 });

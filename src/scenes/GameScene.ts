@@ -7,6 +7,9 @@ import {
   makeBoosterCards,
   isOpen as coreIsOpen,
   isPlayable as coreIsPlayable,
+  isUnlocked,
+  obstaclesForLevel,
+  removedCount,
   starsForStockLeft,
   type CardData,
   type TableauCard,
@@ -46,6 +49,7 @@ type BoosterKind = 'undo' | 'plus5' | 'wild';
 
 interface MoveSnapshot {
   removedIndex: number | null;
+  iceHits?: number;
   drawn: CardData | null;
   prevWaste: CardData;
   score: number;
@@ -69,6 +73,7 @@ interface CardView {
   back: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   suit: Phaser.GameObjects.Text;
+  badge: Phaser.GameObjects.Text;
 }
 
 /**
@@ -325,13 +330,17 @@ export class GameScene extends Phaser.Scene {
       const suit = this.add
         .text(0, 10, '', { fontFamily: 'Arial, sans-serif', color: '#20301f' })
         .setOrigin(0.5);
+      const badge = this.add
+        .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '26px' })
+        .setOrigin(0.5)
+        .setVisible(false);
       const back = this.add.image(0, 0, this.backKey).setVisible(false);
-      const container = this.add.container(0, 0, [bg, label, suit, back]);
+      const container = this.add.container(0, 0, [bg, label, suit, back, badge]);
       bg.setInteractive({ useHandCursor: true });
       bg.on('pointerdown', () => this.onCardTap(i));
       back.setInteractive({ useHandCursor: true });
       back.on('pointerdown', () => this.onCardTap(i));
-      this.views.push({ container, bg, back, label, suit });
+      this.views.push({ container, bg, back, badge, label, suit });
     }
   }
 
@@ -628,7 +637,10 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.takeBooster('undo')) return;
     this.history.pop();
-    if (snap.removedIndex !== null) this.cards[snap.removedIndex].removed = false;
+    if (snap.removedIndex !== null) {
+      this.cards[snap.removedIndex].removed = false;
+      if (snap.iceHits !== undefined) this.cards[snap.removedIndex].iceHits = snap.iceHits;
+    }
     if (snap.drawn) this.stock.push(snap.drawn);
     this.waste = snap.prevWaste;
     this.score = snap.score;
@@ -1185,6 +1197,7 @@ export class GameScene extends Phaser.Scene {
       v.label.setPosition(-this.cardW / 2 + 7, -this.cardH / 2 + 5);
       v.label.setFontSize(Math.round(this.cardW * 0.34));
       v.suit.setPosition(0, Math.round(this.cardH * 0.12));
+      v.badge.setPosition(this.cardW / 2 - 15, -this.cardH / 2 + 15);
       v.suit.setFontSize(Math.round(this.cardW * 0.5));
       this.applyBack(v.back);
     }
@@ -1233,7 +1246,7 @@ export class GameScene extends Phaser.Scene {
     const seed = (Date.now() ^ (this.currentLevel * 7919)) >>> 0;
     this.cameras.main.setBackgroundColor(regionForLevel(this.currentLevel).region.bg);
     this.applyBackground();
-    const game = generateGame(createRng(seed));
+    const game = generateGame(createRng(seed), obstaclesForLevel(this.currentLevel));
     this.cards = game.tableau;
     this.stock = game.stock;
     this.waste = game.waste;
@@ -1269,9 +1282,21 @@ export class GameScene extends Phaser.Scene {
 
   private onCardTap(i: number): void {
     if (this.gameOver) return;
-    const wildPlay = this.wildActive && !this.cards[i].removed && this.isOpen(i);
+    const card = this.cards[i];
+    // Лёд: подходящая замороженная карта сначала трескается, уходит со второго раза.
+    if (!card.removed && card.obstacle === 'ice' && (card.iceHits ?? 0) > 0 && this.isPlayable(i)) {
+      card.iceHits = (card.iceHits ?? 0) - 1;
+      this.refresh();
+      this.persistGame();
+      this.setHint('❄ Лёд треснул! Сыграйте эту карту ещё раз, чтобы снять.');
+      return;
+    }
+    const wildPlay = this.wildActive && !this.cards[i].removed && this.isOpen(i) && isUnlocked(this.cards, i);
     if (!this.isPlayable(i) && !wildPlay) {
-      if (!this.cards[i].removed && !this.isOpen(i)) this.setHint('Эта карта закрыта: сначала снимите карты поверх неё.');
+      if (!card.removed && this.isOpen(i) && !isUnlocked(this.cards, i)) {
+        const left = (card.lockThreshold ?? 0) - removedCount(this.cards);
+        this.setHint(`🔒 Замок: откроется ещё через ${left} снятых карт.`);
+      } else if (!this.cards[i].removed && !this.isOpen(i)) this.setHint('Эта карта закрыта: сначала снимите карты поверх неё.');
       else if (!this.cards[i].removed) this.setHint('Не подходит: нужна карта на 1 выше или ниже сброса (после K идёт A).');
       return;
     }
@@ -1279,7 +1304,7 @@ export class GameScene extends Phaser.Scene {
       this.movesMade = true;
       gameplayStart();
     }
-    this.pushHistory({ removedIndex: i, drawn: null });
+    this.pushHistory({ removedIndex: i, drawn: null, iceHits: this.cards[i].iceHits });
     if (wildPlay) {
       if (!this.takeBooster('wild')) {
         this.history.pop();
@@ -1368,18 +1393,36 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: view.container, scaleX: 1, duration: 180, ease: 'Quad.easeOut' });
       }
       this.wasOpen[i] = open;
-      if (open) {
+      const unlocked = isUnlocked(this.cards, i);
+      if (open && unlocked) {
+        const frozen = card.obstacle === 'ice' && (card.iceHits ?? 0) > 0;
         view.back.setVisible(false);
         view.label.setVisible(true);
         view.suit.setVisible(true);
-        view.bg.setFillStyle(0xf7f1de).setStrokeStyle(playable ? 4 : 2, playable ? 0xf0c94a : 0x2c4a38);
+        view.badge.setVisible(frozen);
+        view.badge.setText('❄');
+        view.bg
+          .setFillStyle(frozen ? 0xcfe8f5 : 0xf7f1de)
+          .setStrokeStyle(playable ? 4 : 2, playable ? 0xf0c94a : 0x2c4a38);
         view.label.setText(RANKS[card.rank]).setColor(this.suitColor(card.suit));
         view.suit.setText(SUITS[card.suit]).setColor(this.suitColor(card.suit));
+      } else if (open && !unlocked) {
+        // Замок: лицо видно, но карта серая и неиграбельна до порога.
+        view.back.setVisible(false);
+        view.label.setVisible(true);
+        view.suit.setVisible(true);
+        view.badge.setVisible(true);
+        view.badge.setText('🔒');
+        view.bg.setFillStyle(0xb9c0bb).setStrokeStyle(2, 0x5a6a60);
+        view.label.setText(RANKS[card.rank]).setColor('#5a6a60');
+        view.suit.setText(SUITS[card.suit]).setColor('#5a6a60');
       } else {
         this.applyBack(view.back);
         view.back.setVisible(true);
         view.label.setVisible(false);
         view.suit.setVisible(false);
+        view.badge.setVisible(card.obstacle === 'lock');
+        view.badge.setText(card.obstacle === 'lock' ? '🔒' : '');
       }
     }
 
