@@ -712,7 +712,7 @@ export class GameScene extends Phaser.Scene {
   private routePoints(): { fx: number; fy: number }[] {
     const pts: { fx: number; fy: number }[] = [];
     for (let row = 0; row < 6; row++) {
-      const fy = 0.88 - row * 0.148;
+      const fy = 0.84 - row * 0.132;
       const xs = [0.16, 0.33, 0.5, 0.67, 0.84];
       if (row % 2 === 1) xs.reverse();
       for (const fx of xs) pts.push({ fx, fy });
@@ -723,8 +723,14 @@ export class GameScene extends Phaser.Scene {
   private rebuildMap(): void {
     const W = this.scale.width;
     const H = this.scale.height;
-    const boxW = Math.min(640, W - 24);
-    const boxH = Math.min(760, H - 90);
+    // Карта — почти на весь экран, в пропорциях картинки 720×1080.
+    let boxH = H - 32;
+    let boxW = (boxH * 2) / 3;
+    if (boxW > W - 20) {
+      boxW = W - 20;
+      boxH = boxW * 1.5;
+    }
+    const k = boxW / 640; // масштаб узлов/шрифтов под размер карты
     const cx = W / 2;
     const cy = H / 2;
     const top = cy - boxH / 2;
@@ -786,14 +792,14 @@ export class GameScene extends Phaser.Scene {
       const completed = lvl < this.progress.level;
       const frontier = lvl === this.progress.level;
       const playing = lvl === this.currentLevel;
-      const radius = frontier ? 17 : 14;
+      const radius = (frontier ? 17 : 14) * k;
       const circle = this.add
         .circle(0, 0, radius, completed ? 0xf0a500 : frontier ? 0x57a773 : 0x93a696)
         .setStrokeStyle(playing ? 4 : 2, playing ? 0xf0c94a : 0xffffff);
       const text = this.add
         .text(0, 0, completed ? '★' : String(lvl), {
           fontFamily: 'Arial, sans-serif',
-          fontSize: completed ? '15px' : '13px',
+          fontSize: completed ? `${Math.round(15 * k)}px` : `${Math.round(13 * k)}px`,
           color: completed || frontier ? '#10251c' : '#ffffff',
           fontStyle: 'bold',
         })
@@ -811,9 +817,9 @@ export class GameScene extends Phaser.Scene {
       }
       this.mapContent.add(node);
       if (playing) {
-        const pin = this.add.text(pt.x, pt.y - 34, '📍', { fontSize: '26px' }).setOrigin(0.5);
+        const pin = this.add.text(pt.x, pt.y - 34 * k, '📍', { fontSize: `${Math.round(26 * k)}px` }).setOrigin(0.5);
         this.mapContent.add(pin);
-        this.tweens.add({ targets: pin, y: pt.y - 44, duration: 550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        this.tweens.add({ targets: pin, y: pt.y - 44 * k, duration: 550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       }
       if (frontier && !playing) {
         this.tweens.add({ targets: node, scale: 1.18, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
