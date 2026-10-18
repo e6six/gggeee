@@ -856,6 +856,7 @@ export class GameScene extends Phaser.Scene {
     this.winOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
     this.winBox.setPosition(cx, H / 2).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
     this.winArt.setTexture(region.bgKey);
+    this.winArt.setCrop(region.artCrop.x, region.artCrop.y, region.artCrop.w, region.artCrop.h);
     this.winArt.setPosition(cx, top + 158).setDisplaySize(boxW - 56, 176);
     this.winTitle.setPosition(cx, top + 42);
     this.winLevel.setText(`Уровень ${this.currentLevel} · ${region.name}`);
