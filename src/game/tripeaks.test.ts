@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { regionForLevel } from './regions';
 import {
   blockersFor,
   coinsForWin,
@@ -83,5 +84,16 @@ describe('бустер +5 карт', () => {
     for (let i = 1; i < cards.length; i++) {
       expect(rankMatches(cards[i].rank, cards[i - 1].rank)).toBe(true);
     }
+  });
+});
+
+describe('регионы путешествия', () => {
+  it('каждые 10 уровней — новый регион, каждые 30 — новый цикл', () => {
+    expect(regionForLevel(1).region.name).toBe('Средиземноморье');
+    expect(regionForLevel(10).indexInRegion).toBe(10);
+    expect(regionForLevel(11).region.name).toBe('Япония');
+    expect(regionForLevel(21).region.name).toBe('Старая Европа');
+    expect(regionForLevel(31).region.name).toBe('Средиземноморье');
+    expect(regionForLevel(31).cycle).toBe(2);
   });
 });

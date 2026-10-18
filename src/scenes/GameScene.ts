@@ -11,6 +11,7 @@ import {
   type CardData,
   type TableauCard,
 } from '../game/tripeaks';
+import { REGIONS, regionForLevel } from '../game/regions';
 
 interface Progress {
   level: number;
@@ -69,6 +70,8 @@ export class GameScene extends Phaser.Scene {
   private wasOpen: boolean[] = new Array(28).fill(false);
 
   private progress: Progress = structuredClone(DEFAULT_PROGRESS);
+  /** Текущий играемый уровень (progress.level — граница открытого). */
+  private currentLevel = 1;
   private history: MoveSnapshot[] = [];
   private wildActive = false;
   private boosterButtons = new Map<BoosterKind, Phaser.GameObjects.Text>();
@@ -105,6 +108,13 @@ export class GameScene extends Phaser.Scene {
   private fieldActionButton!: Phaser.GameObjects.Text;
   private boardCenterY = 500;
   private gearButton!: Phaser.GameObjects.Text;
+  private mapButton!: Phaser.GameObjects.Text;
+  private mapPanel!: Phaser.GameObjects.Container;
+  private mapOverlay!: Phaser.GameObjects.Rectangle;
+  private mapBox!: Phaser.GameObjects.Rectangle;
+  private mapTitle!: Phaser.GameObjects.Text;
+  private mapClose!: Phaser.GameObjects.Text;
+  private mapContent!: Phaser.GameObjects.Container;
 
   // Настройки
   private settingsPanel!: Phaser.GameObjects.Container;
@@ -141,6 +151,7 @@ export class GameScene extends Phaser.Scene {
     this.buildFieldAction();
     this.buildBoosters();
     this.buildSettings();
+    this.buildMap();
     this.layout();
     this.scale.on('resize', () => this.layout());
 
@@ -152,6 +163,7 @@ export class GameScene extends Phaser.Scene {
         boosters: { ...DEFAULT_PROGRESS.boosters, ...(saved.boosters ?? {}) },
       };
       this.progress = merged;
+      this.currentLevel = merged.level;
       if (merged.level > 1 || merged.totalStars > 0 || merged.coins > 0) this.newGame();
       else this.paintBoosters();
     });
@@ -197,6 +209,19 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true })
       .setDepth(20);
     this.gearButton.on('pointerdown', () => this.toggleSettings(true));
+    this.mapButton = this.add
+      .text(0, 58, '🗺 Карта', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '17px',
+        color: '#10251c',
+        backgroundColor: '#8fae94',
+        fontStyle: 'bold',
+        padding: { x: 12, y: 9 },
+      })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(20);
+    this.mapButton.on('pointerdown', () => this.toggleMap(true));
 
     this.statusText = this.add
       .text(0, 112, '', {
@@ -216,7 +241,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateMeta(): void {
-    this.levelText.setText(`Уровень ${this.progress.level}`);
+    const { region, indexInRegion } = regionForLevel(this.currentLevel);
+    this.levelText.setText(`Ур. ${this.currentLevel} · ${region.name} ${indexInRegion}/10`);
     this.walletText.setText(`⭐ ${this.progress.totalStars}    🪙 ${this.progress.coins}`);
     this.scoreText.setText(`Счёт: ${this.score} · Серия: ${this.streak} · Лучшая: ${this.bestStreak}`);
   }
@@ -340,7 +366,7 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.fieldActionButton.on('pointerdown', () => {
       if (this.gameOver === 'win') {
-        this.progress.level += 1;
+        this.currentLevel += 1;
         this.newGame();
       }
     });
@@ -547,6 +573,7 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.resetButton.on('pointerdown', () => {
       this.progress = structuredClone(DEFAULT_PROGRESS);
+      this.currentLevel = 1;
       void storeSave(this.progress);
       this.newGame();
       this.toggleSettings(false);
@@ -621,6 +648,99 @@ export class GameScene extends Phaser.Scene {
     this.paintSettings();
   }
 
+  // --- Карта путешествия --------------------------------------------------------
+
+  private buildMap(): void {
+    this.mapOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.65).setOrigin(0);
+    this.mapBox = this.add.rectangle(0, 0, 10, 10, 0x16382a).setStrokeStyle(2, 0xf0c94a);
+    this.mapTitle = this.add
+      .text(0, 0, '🗺 Путешествие', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '26px',
+        color: '#f5e9c9',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    this.mapContent = this.add.container(0, 0, []);
+    this.mapClose = this.add
+      .text(0, 0, '✕ Закрыть', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '19px',
+        color: '#10251c',
+        backgroundColor: '#f0c94a',
+        fontStyle: 'bold',
+        padding: { x: 20, y: 11 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.mapClose.on('pointerdown', () => this.toggleMap(false));
+    this.mapPanel = this.add
+      .container(0, 0, [this.mapOverlay, this.mapBox, this.mapTitle, this.mapContent, this.mapClose])
+      .setDepth(50)
+      .setVisible(false);
+  }
+
+  private toggleMap(open: boolean): void {
+    if (open) this.rebuildMap();
+    this.mapPanel.setVisible(open);
+  }
+
+  private rebuildMap(): void {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const boxW = Math.min(620, W - 32);
+    const boxH = Math.min(720, H - 110);
+    const cx = W / 2;
+    const top = H / 2 - boxH / 2;
+    this.mapOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
+    this.mapBox.setPosition(cx, H / 2).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
+    this.mapTitle.setPosition(cx, top + 38);
+    this.mapClose.setPosition(cx, top + boxH - 40);
+    this.mapContent.removeAll(true);
+
+    const cycleBase = Math.floor((this.currentLevel - 1) / 30) * 30;
+    REGIONS.forEach((region, r) => {
+      const sectionY = top + 86 + r * ((boxH - 190) / 3);
+      const isCurrentRegion = regionForLevel(this.currentLevel).region.name === region.name;
+      const name = this.add
+        .text(cx, sectionY, `${region.name}${isCurrentRegion ? '  ·  вы здесь' : ''}`, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '19px',
+          color: isCurrentRegion ? '#f0c94a' : '#b9d3a8',
+          fontStyle: isCurrentRegion ? 'bold' : 'normal',
+        })
+        .setOrigin(0.5);
+      this.mapContent.add(name);
+      for (let i = 0; i < 10; i++) {
+        const lvl = cycleBase + r * 10 + i + 1;
+        const completed = lvl < this.progress.level;
+        const frontier = lvl === this.progress.level;
+        const playing = lvl === this.currentLevel;
+        const node = this.add
+          .text(cx + ((i % 5) - 2) * 88, sectionY + 42 + Math.floor(i / 5) * 56, completed ? `⭐${lvl}` : frontier ? `▶${lvl}` : `${lvl}`, {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '16px',
+            color: playing ? '#10251c' : completed || frontier ? '#10251c' : '#9db3a4',
+            backgroundColor: playing ? '#f0c94a' : completed ? '#d9b64a' : frontier ? '#57a773' : '#44584c',
+            fontStyle: playing || frontier ? 'bold' : 'normal',
+            padding: { x: 10, y: 8 },
+          })
+          .setOrigin(0.5);
+        if (lvl <= this.progress.level) {
+          node.setInteractive({ useHandCursor: true });
+          node.on('pointerdown', () => {
+            this.currentLevel = lvl;
+            this.toggleMap(false);
+            this.newGame();
+          });
+        } else {
+          node.setAlpha(0.6);
+        }
+        this.mapContent.add(node);
+      }
+    });
+  }
+
   /** Смена рубашки: setTexture + повторный setDisplaySize (фикс «взрыва» текстур). */
   private applyBack(img: Phaser.GameObjects.Image): void {
     if (img.texture.key !== this.backKey) img.setTexture(this.backKey);
@@ -654,6 +774,7 @@ export class GameScene extends Phaser.Scene {
     this.levelText.setPosition(16, 60);
     this.walletText.setPosition(W / 2, 66);
     this.gearButton.setPosition(W - 16, 56);
+    this.mapButton.setPosition(W - 84, 56);
     this.statusText.setPosition(W / 2, 114);
     this.scoreText.setPosition(W / 2, 140);
 
@@ -712,13 +833,14 @@ export class GameScene extends Phaser.Scene {
   // --- Игра --------------------------------------------------------------------
 
   private onRestart(): void {
-    if (this.gameOver === 'win') this.progress.level += 1;
+    if (this.gameOver === 'win') this.currentLevel += 1;
     this.toggleSettings(false);
     this.newGame();
   }
 
   private newGame(): void {
-    const seed = (Date.now() ^ (this.progress.level * 7919)) >>> 0;
+    const seed = (Date.now() ^ (this.currentLevel * 7919)) >>> 0;
+    this.cameras.main.setBackgroundColor(regionForLevel(this.currentLevel).region.bg);
     const game = generateGame(createRng(seed));
     this.cards = game.tableau;
     this.stock = game.stock;
@@ -736,7 +858,12 @@ export class GameScene extends Phaser.Scene {
     this.paintBoosters();
     this.refresh();
     this.updateMeta();
-    this.setHint('Тапните по подсвеченной карте на ±1 от сброса.\nНет хода — тапните по колоде.');
+    const { region, indexInRegion } = regionForLevel(this.currentLevel);
+    this.setHint(
+      indexInRegion === 1 && this.currentLevel > 1
+        ? `Новый регион: ${region.name}! Тапните по подсвеченной карте на ±1 от сброса.`
+        : 'Тапните по подсвеченной карте на ±1 от сброса.\nНет хода — тапните по колоде.',
+    );
   }
 
   private isOpen(i: number): boolean {
@@ -795,6 +922,7 @@ export class GameScene extends Phaser.Scene {
     if (left === 0) {
       gameplayStop();
       this.gameOver = 'win';
+      if (this.currentLevel >= this.progress.level) this.progress.level = this.currentLevel + 1;
       const stars = starsForStockLeft(this.stock.length);
       const coins = coinsForWin(this.stock.length, this.bestStreak);
       this.progress.totalStars += stars;
@@ -806,7 +934,7 @@ export class GameScene extends Phaser.Scene {
       this.restartButton.setText('▶ Следующий уровень');
       this.fieldActionButton.setVisible(true);
       this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙 +1 бустер`);
-      this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}.`);
+      this.setHint(`Уровень ${this.currentLevel} пройден. Лучшая серия: ${this.bestStreak}.`);
       this.updateMeta();
       return;
     }
