@@ -184,8 +184,7 @@ export class GameScene extends Phaser.Scene {
     for (const b of CARD_BACKS) this.load.image(b.key, b.file);
     for (const r of REGIONS) {
       this.load.image(r.bgKey, r.bgFile);
-      this.load.image(`${r.bgKey}-wide`, r.bgFile.replace('.jpg', '-wide.jpg'));
-      this.load.image(`${r.bgKey}-tall`, r.bgFile.replace('.jpg', '-tall.jpg'));
+      this.load.image(`${r.bgKey}-land`, r.bgFile.replace('.jpg', '-land.jpg'));
     }
     this.load.image('map-world', 'assets/bg/map-world.jpg');
     this.load.image('postcard-win', 'assets/bg/postcard-win.jpg');
@@ -1325,17 +1324,17 @@ export class GameScene extends Phaser.Scene {
   // --- Адаптивная вёрстка ------------------------------------------------------
 
   /**
-   * Фон региона одной цельной картинкой под форму экрана: для широкого окна
-   * берётся wide-вариант (1920x1080), для высокого — tall (1080x1920), иначе
-   * портретный оригинал. Варианты достроены зеркально (scripts/make-bg-
-   * variants.py), поэтому cover почти ничего не режет и декор по краям цел.
+   * Фон региона: под широкие окна у каждой локации есть родной ландшафтный
+   * арт (-land, 16:9), под высокие — портретный оригинал. Оба просто кладутся
+   * cover-ом на весь экран: картинка цельная, ничего не склеено и не обрезано
+   * по смыслу (у каждой формы экрана — своя композиция с пустым центром).
    */
   private applyBackground(): void {
     const W = this.scale.width;
     const H = this.scale.height;
     const aspect = W / H;
     const base = regionForLevel(this.currentLevel).region.bgKey;
-    const key = aspect > 1.1 ? `${base}-wide` : aspect < 0.58 ? `${base}-tall` : base;
+    const key = aspect >= 0.95 ? `${base}-land` : base;
     if (this.bgImage.texture.key !== key) this.bgImage.setTexture(key);
     this.bgArt.setVisible(false);
     const tex = this.bgImage.texture.getSourceImage() as HTMLImageElement;
