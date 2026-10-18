@@ -1,17 +1,26 @@
 import Phaser from 'phaser';
-import { gameplayStart, gameplayStop } from '../yandex/sdk';
+import { gameplayStart, gameplayStop, loadSave, storeSave } from '../yandex/sdk';
+import {
+  coinsForWin,
+  createRng,
+  generateGame,
+  isOpen as coreIsOpen,
+  isPlayable as coreIsPlayable,
+  starsForStockLeft,
+  type CardData,
+  type TableauCard,
+} from '../game/tripeaks';
+
+interface Progress {
+  level: number;
+  totalStars: number;
+  coins: number;
+}
 
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const SUITS = ['♠', '♥', '♦', '♣'];
 const CARD_W = 62;
 const CARD_H = 100;
-
-interface CardModel {
-  rank: number; // 0..12
-  suit: number; // 0..3
-  removed: boolean;
-  blockers: number[]; // индексы карт, которые должны уйти, чтобы эта открылась
-}
 
 interface CardView {
   container: Phaser.GameObjects.Container;
@@ -43,11 +52,21 @@ const CARD_BACKS = [
  * с юнит-тестами.
  */
 export class GameScene extends Phaser.Scene {
-  private cards: CardModel[] = [];
+  private cards: TableauCard[] = [];
   private views: CardView[] = [];
-  private stock: CardModel[] = [];
-  private waste!: CardModel;
+  private stock: CardData[] = [];
+  private waste!: CardData;
   private movesMade = false;
+  private wasOpen: boolean[] = new Array(28).fill(false);
+
+  // Мета (этап 3, первая версия): уровни, звёзды, монеты, счёт и серия.
+  private progress: Progress = { level: 1, totalStars: 0, coins: 0 };
+  private score = 0;
+  private streak = 0;
+  private bestStreak = 0;
+  private gameOver: 'win' | 'lose' | null = null;
+  private metaText!: Phaser.GameObjects.Text;
+  private restartButton!: Phaser.GameObjects.Text;
 
   private stockBack!: Phaser.GameObjects.Image;
   private backKey: string = CARD_BACKS[0].key;
@@ -75,9 +94,9 @@ export class GameScene extends Phaser.Scene {
     // Декоративная рамка стола: поле не должно «висеть» в пустоте.
     const deco = this.add.graphics();
     deco.lineStyle(2, 0x2c4a38, 0.9);
-    deco.strokeRoundedRect(14, 145, width - 28, 460, 18);
+    deco.strokeRoundedRect(14, 152, width - 28, 452, 18);
     deco.lineStyle(1, 0xf0c94a, 0.35);
-    deco.strokeRoundedRect(22, 153, width - 44, 444, 14);
+    deco.strokeRoundedRect(22, 160, width - 44, 436, 14);
     deco.fillStyle(0xf0c94a, 0.08);
     deco.fillCircle(70, 200, 46);
     deco.fillCircle(width - 70, 200, 46);
@@ -110,10 +129,24 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    this.metaText = this.add
+      .text(width / 2, 138, '', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        color: '#f5e9c9',
+      })
+      .setOrigin(0.5);
+
     this.buildBoard();
     this.buildStockAndWaste();
     this.buildButtons();
     this.newGame();
+    void loadSave<Progress>({ level: 1, totalStars: 0, coins: 0 }).then((saved) => {
+      if (saved.level > 1 || saved.totalStars > 0 || saved.coins > 0) {
+        this.progress = saved;
+        this.newGame();
+      }
+    });
   }
 
   // --- Построение поля -----------------------------------------------------
@@ -297,7 +330,7 @@ export class GameScene extends Phaser.Scene {
 
   private buildButtons(): void {
     this.buildBackSelector();
-    const restart = this.add
+    this.restartButton = this.add
       .text(360, 975, '↻ Новая игра', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '20px',
@@ -307,74 +340,52 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
-    restart.on('pointerdown', () => this.newGame());
+    this.restartButton.on('pointerdown', () => this.onRestart());
+  }
+
+  private onRestart(): void {
+    if (this.gameOver === 'win') this.progress.level += 1;
+    this.newGame();
   }
 
   // --- Генерация гарантированно проходимой партии --------------------------
 
   private newGame(): void {
-    // Цепочка рангов: каждый следующий ±1 (по кругу A<->K).
-    const chain: number[] = [Phaser.Math.Between(0, 12)];
-    for (let i = 1; i < 52; i++) {
-      const step = Phaser.Math.RND.pick([-1, 1]);
-      chain.push((chain[i - 1] + step + 13) % 13);
-    }
-    // Масти — просто перетасованная колода по кругу, на механику не влияют.
-    const suits = Phaser.Utils.Array.Shuffle([...Array(52)].map((_, i) => i % 4));
-    const make = (i: number): CardModel => ({
-      rank: chain[i],
-      suit: suits[i],
-      removed: false,
-      blockers: [],
-    });
-
-    // Порядок снятия раскладки, допустимый геометрией: снизу вверх.
-    const removalOrder = [
-      ...Phaser.Utils.Array.Shuffle([18, 19, 20, 21, 22, 23, 24, 25, 26, 27]),
-      ...Phaser.Utils.Array.Shuffle([9, 10, 11, 12, 13, 14, 15, 16, 17]),
-      ...Phaser.Utils.Array.Shuffle([3, 4, 5, 6, 7, 8]),
-      ...Phaser.Utils.Array.Shuffle([0, 1, 2]),
-    ];
-
-    // Раскладываем цепочку: шаг 0 — стартовый сброс; дальше вперемешку
-    // снятия раскладки и доборы из колоды по намеченному решению.
-    this.waste = make(0);
-    this.cards = new Array<CardModel>(28);
-    this.stock = [];
-    let chainIdx = 1;
-    let removalIdx = 0;
-    const totalActions = 28 + 23; // 28 снятий + 23 добора (1 карта ушла в стартовый сброс)
-    for (let a = 0; a < totalActions; a++) {
-      const mustRemove = removalIdx >= 28;
-      const mustDraw = this.stock.length >= 23;
-      const doRemove = !mustDraw && (mustRemove || Phaser.Math.RND.frac() < 0.62);
-      if (doRemove) {
-        const idx = removalOrder[removalIdx++];
-        this.cards[idx] = make(chainIdx++);
-      } else {
-        this.stock.push(make(chainIdx++));
-      }
-    }
-    // stock.pop() берёт с конца — а решение шло от начала; разворачиваем.
-    this.stock.reverse();
-    for (let i = 0; i < 28; i++) this.cards[i].blockers = this.blockersFor(i);
-
+    const seed = (Date.now() ^ (this.progress.level * 7919)) >>> 0;
+    const game = generateGame(createRng(seed));
+    this.cards = game.tableau;
+    this.stock = game.stock;
+    this.waste = game.waste;
     this.movesMade = false;
+    this.wasOpen = new Array(28).fill(false);
+    this.score = 0;
+    this.streak = 0;
+    this.bestStreak = 0;
+    this.gameOver = null;
+    this.restartButton.setText('↻ Новая игра');
     this.refresh();
-    this.setStatus('');
+    this.updateMeta();
     this.setHint('Тапните по подсвеченной карте на ±1 от сброса.\nНет хода — тапните по колоде.');
+  }
+
+  private updateMeta(): void {
+    this.metaText.setText(
+      `Уровень ${this.progress.level}  ·  ⭐ ${this.progress.totalStars}  ·  🪙 ${this.progress.coins}  ·  Счёт: ${this.score}  ·  Серия: ${this.streak}`,
+    );
+  }
+
+  private async saveProgress(): Promise<void> {
+    await storeSave(this.progress);
   }
 
   // --- Игровые действия ------------------------------------------------------
 
   private isOpen(i: number): boolean {
-    return this.cards[i].blockers.every((b) => this.cards[b].removed);
+    return coreIsOpen(this.cards, i);
   }
 
   private isPlayable(i: number): boolean {
-    if (this.cards[i].removed || !this.isOpen(i)) return false;
-    const d = Math.abs(this.cards[i].rank - this.waste.rank);
-    return d === 1 || d === 12;
+    return coreIsPlayable(this.cards, i, this.waste);
   }
 
   private onCardTap(i: number): void {
@@ -389,6 +400,9 @@ export class GameScene extends Phaser.Scene {
     }
     this.cards[i].removed = true;
     this.waste = this.cards[i];
+    this.streak += 1;
+    this.bestStreak = Math.max(this.bestStreak, this.streak);
+    this.score += 100 + (this.streak - 1) * 20;
     this.afterMove();
   }
 
@@ -399,6 +413,7 @@ export class GameScene extends Phaser.Scene {
       gameplayStart();
     }
     this.waste = this.stock.pop()!;
+    this.streak = 0;
     this.afterMove();
   }
 
@@ -407,15 +422,25 @@ export class GameScene extends Phaser.Scene {
     const left = this.cards.filter((c) => !c.removed).length;
     if (left === 0) {
       gameplayStop();
-      this.setStatus('🎉 Победа! Раскладка разобрана');
-      this.setHint('Нажмите «Новая игра» — генератор соберёт следующую проходимую раскладку.');
+      this.gameOver = 'win';
+      const stars = starsForStockLeft(this.stock.length);
+      const coins = coinsForWin(this.stock.length, this.bestStreak);
+      this.progress.totalStars += stars;
+      this.progress.coins += coins;
+      void this.saveProgress();
+      this.restartButton.setText('▶ Следующий уровень');
+      this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙`);
+      this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}. Дальше — кнопка ниже.`);
+      this.updateMeta();
       return;
     }
     const anyMove = this.cards.some((_, i) => this.isPlayable(i));
     if (!anyMove && this.stock.length === 0) {
       gameplayStop();
+      this.gameOver = 'lose';
+      this.restartButton.setText('↻ Ещё раз');
       this.setStatus('Колода пуста и ходов нет — в этот раз не вышло');
-      this.setHint('Нажмите «Новая игра». Подсказка: не тратьте колоду, пока есть подсвеченные ходы.');
+      this.setHint('Нажмите «Ещё раз». Подсказка: не тратьте колоду, пока есть подсвеченные ходы.');
       return;
     }
     this.setHint(
@@ -439,6 +464,11 @@ export class GameScene extends Phaser.Scene {
       if (card.removed) continue;
       const open = this.isOpen(i);
       const playable = this.isPlayable(i);
+      if (open && !this.wasOpen[i] && this.movesMade) {
+        view.container.setScale(0.15, 1);
+        this.tweens.add({ targets: view.container, scaleX: 1, duration: 180, ease: 'Quad.easeOut' });
+      }
+      this.wasOpen[i] = open;
       if (open) {
         view.back.setVisible(false);
         view.label.setVisible(true);
@@ -454,7 +484,7 @@ export class GameScene extends Phaser.Scene {
         view.suit.setVisible(false);
         view.container.setAlpha(1);
       }
-      view.container.setScale(1);
+      // масштаб не трогаем: на контейнере может играть флип-анимация открытия
     }
 
     this.stockLabel.setText(this.stock.length > 0 ? String(this.stock.length) : '—');
@@ -463,7 +493,8 @@ export class GameScene extends Phaser.Scene {
     this.wasteSuit.setText(SUITS[this.waste.suit]).setColor(this.suitColor(this.waste.suit));
 
     const left = this.cards.filter((c) => !c.removed).length;
-    if (left > 0) this.setStatus(`Осталось снять карт: ${left} · в колоде: ${this.stock.length}`);
+    if (left > 0) this.setStatus(`Осталось снять: ${left} · в колоде: ${this.stock.length}`);
+    if (this.metaText) this.updateMeta();
   }
 
   private setStatus(text: string): void {
