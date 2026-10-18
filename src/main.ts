@@ -9,7 +9,9 @@ const config: Phaser.Types.Core.GameConfig = {
   parent: 'game',
   backgroundColor: '#10251c',
   scale: {
-    mode: Phaser.Scale.FIT,
+    // EXPAND: холст подстраивается под реальное окно, вёрстка сцены
+    // пересчитывается от фактических размеров (см. GameScene.layout).
+    mode: Phaser.Scale.EXPAND,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: 720,
     height: 1120,
