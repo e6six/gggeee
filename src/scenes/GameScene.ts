@@ -382,7 +382,7 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.closeSettingsButton.on('pointerdown', () => this.toggleSettings(false));
 
-    children.push(this.soundButton, this.resetButton, this.closeSettingsButton);
+    children.push(this.restartButton, this.soundButton, this.resetButton, this.closeSettingsButton);
     this.settingsPanel = this.add.container(0, 0, children).setDepth(50).setVisible(false);
     this.paintSettings();
   }
@@ -419,7 +419,7 @@ export class GameScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
     const boxW = Math.min(560, W - 48);
-    const boxH = 560;
+    const boxH = 640;
     const cx = W / 2;
     const cy = H / 2;
     this.settingsOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
@@ -431,8 +431,9 @@ export class GameScene extends Phaser.Scene {
       this.backPreviews[idx].setPosition(x, cy - boxH / 2 + 178);
       this.backButtons[idx].setPosition(x, cy - boxH / 2 + 252);
     });
-    this.soundButton.setPosition(cx, cy + 40);
-    this.resetButton.setPosition(cx, cy + 108);
+    this.restartButton.setPosition(cx, cy + 18);
+    this.soundButton.setPosition(cx, cy + 84);
+    this.resetButton.setPosition(cx, cy + 148);
     this.closeSettingsButton.setPosition(cx, cy + boxH / 2 - 52);
     this.paintSettings();
   }
@@ -512,7 +513,6 @@ export class GameScene extends Phaser.Scene {
     this.applyBack(this.stockBack);
 
     this.hintText.setPosition(W / 2, stockY + stockHalf + 34).setWordWrapWidth(Math.min(680, W - 40));
-    this.restartButton.setPosition(W / 2, Math.min(H - 44, stockY + stockHalf + 104));
 
     if (this.settingsPanel?.visible) this.layoutSettings();
     if (this.cards.length === 28) this.refresh();
@@ -522,6 +522,7 @@ export class GameScene extends Phaser.Scene {
 
   private onRestart(): void {
     if (this.gameOver === 'win') this.progress.level += 1;
+    this.toggleSettings(false);
     this.newGame();
   }
 
@@ -594,7 +595,7 @@ export class GameScene extends Phaser.Scene {
       void storeSave(this.progress);
       this.restartButton.setText('▶ Следующий уровень');
       this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙`);
-      this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}. Дальше — кнопка ниже.`);
+      this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}. Следующий уровень — в настройках ⚙.`);
       this.updateMeta();
       return;
     }
@@ -604,7 +605,7 @@ export class GameScene extends Phaser.Scene {
       this.gameOver = 'lose';
       this.restartButton.setText('↻ Ещё раз');
       this.setStatus('Колода пуста и ходов нет — в этот раз не вышло');
-      this.setHint('Нажмите «Ещё раз». Подсказка: не тратьте колоду, пока есть подсвеченные ходы.');
+      this.setHint('«Ещё раз» — в настройках ⚙. Подсказка: не тратьте колоду, пока есть подсвеченные ходы.');
       return;
     }
     this.setHint(
