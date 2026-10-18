@@ -102,6 +102,8 @@ export class GameScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private hintText!: Phaser.GameObjects.Text;
   private restartButton!: Phaser.GameObjects.Text;
+  private fieldActionButton!: Phaser.GameObjects.Text;
+  private boardCenterY = 500;
   private gearButton!: Phaser.GameObjects.Text;
 
   // Настройки
@@ -136,6 +138,7 @@ export class GameScene extends Phaser.Scene {
     this.buildBoard();
     this.buildStockAndWaste();
     this.buildButtons();
+    this.buildFieldAction();
     this.buildBoosters();
     this.buildSettings();
     this.layout();
@@ -320,6 +323,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   // --- Бустеры -----------------------------------------------------------------
+
+  private buildFieldAction(): void {
+    this.fieldActionButton = this.add
+      .text(0, 0, '▶ Следующий уровень', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '24px',
+        color: '#10251c',
+        backgroundColor: '#f0c94a',
+        fontStyle: 'bold',
+        padding: { x: 30, y: 16 },
+      })
+      .setOrigin(0.5)
+      .setDepth(30)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    this.fieldActionButton.on('pointerdown', () => {
+      if (this.gameOver === 'win') {
+        this.progress.level += 1;
+        this.newGame();
+      }
+    });
+  }
 
   private buildBoosters(): void {
     const defs: { kind: BoosterKind; label: string }[] = [
@@ -616,6 +641,8 @@ export class GameScene extends Phaser.Scene {
     this.boardTop = 176 + this.cardH / 2;
     const boardTop = this.boardTop;
     const boardBottom = boardTop + 3 * pitchY + this.cardH / 2;
+    this.boardCenterY = boardTop + 1.5 * pitchY;
+    if (this.fieldActionButton) this.fieldActionButton.setPosition(W / 2, this.boardCenterY);
 
     // HUD-панель сверху
     this.hudBg.clear();
@@ -705,6 +732,7 @@ export class GameScene extends Phaser.Scene {
     this.history = [];
     this.wildActive = false;
     this.restartButton.setText('↻ Новая игра');
+    this.fieldActionButton.setVisible(false);
     this.paintBoosters();
     this.refresh();
     this.updateMeta();
@@ -776,8 +804,9 @@ export class GameScene extends Phaser.Scene {
       void storeSave(this.progress);
       this.paintBoosters();
       this.restartButton.setText('▶ Следующий уровень');
+      this.fieldActionButton.setVisible(true);
       this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙 +1 бустер`);
-      this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}. Следующий уровень — в настройках ⚙.`);
+      this.setHint(`Уровень ${this.progress.level} пройден. Лучшая серия: ${this.bestStreak}.`);
       this.updateMeta();
       return;
     }
