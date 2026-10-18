@@ -774,9 +774,9 @@ export class GameScene extends Phaser.Scene {
     REGIONS.forEach((region, r) => {
       const pt = pts[r * 10];
       const label = this.add
-        .text(pt.x, pt.y - 40, region.name, {
+        .text(pt.x, pt.y - 40 * k, region.name, {
           fontFamily: 'Arial, sans-serif',
-          fontSize: '15px',
+          fontSize: `${Math.round(15 * k)}px`,
           color: '#f5e9c9',
           backgroundColor: '#10251c',
           fontStyle: 'bold',
@@ -829,7 +829,7 @@ export class GameScene extends Phaser.Scene {
     const legend = this.add
       .text(cx, top + boxH - 74, 'Золотая линия — ваш путь · 📍 — вы здесь · тап по узлу — играть', {
         fontFamily: 'Arial, sans-serif',
-        fontSize: '14px',
+        fontSize: `${Math.round(14 * k)}px`,
         color: '#f5e9c9',
         backgroundColor: '#10251c',
         padding: { x: 12, y: 6 },
