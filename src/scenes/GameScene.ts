@@ -495,7 +495,10 @@ export class GameScene extends Phaser.Scene {
     this.stockBg.setSize(this.cardW, this.cardH).setDisplaySize(this.cardW, this.cardH);
     this.wasteBg.setSize(this.cardW, this.cardH).setDisplaySize(this.cardW, this.cardH);
     this.stockLabel.setStroke('#10251c', 5);
-    const stockY = Math.min(H - 290, boardBottom + 86);
+    // Колода/сброс увеличены (scale 1.18): отступ считаем от визуальной
+    // половины карты, иначе верх колоды залезает на нижний ряд поля.
+    const stockHalf = (this.cardH * 1.18) / 2;
+    const stockY = boardBottom + 42 + stockHalf;
     this.stockView.setPosition(W / 2 - 78, stockY).setScale(1.18);
     this.wasteView.setPosition(W / 2 + 78, stockY).setScale(1.18);
     const stockTitle = this.stockView.getByName('stockTitle') as Phaser.GameObjects.Text;
@@ -508,8 +511,8 @@ export class GameScene extends Phaser.Scene {
     this.wasteSuit.setFontSize(Math.round(this.cardW * 0.5));
     this.applyBack(this.stockBack);
 
-    this.hintText.setPosition(W / 2, stockY + 128).setWordWrapWidth(Math.min(680, W - 40));
-    this.restartButton.setPosition(W / 2, Math.min(H - 44, stockY + 198));
+    this.hintText.setPosition(W / 2, stockY + stockHalf + 34).setWordWrapWidth(Math.min(680, W - 40));
+    this.restartButton.setPosition(W / 2, Math.min(H - 44, stockY + stockHalf + 104));
 
     if (this.settingsPanel?.visible) this.layoutSettings();
     if (this.cards.length === 28) this.refresh();
