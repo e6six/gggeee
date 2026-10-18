@@ -93,12 +93,18 @@ export function isPlayable(tableau: TableauCard[], index: number, waste: CardDat
   );
 }
 
-/** Препятствия по уровню внутри 30-уровневого цикла регионов. */
+/** Препятствия по уровню: круг — 4 локации по 10 уровней.
+ * Локация 1 чистая (на повторных кругах — немного льда), дальше лёд,
+ * с третьей локации — замки. На 61-м (круг 2, третья локация) есть всё. */
 export function obstaclesForLevel(level: number): { ice: number; locks: number } {
-  const inCycle = ((level - 1) % 30) + 1;
-  if (inCycle <= 10) return { ice: 0, locks: 0 };
-  if (inCycle <= 20) return { ice: Math.min(3 + Math.floor((inCycle - 11) / 3), 5), locks: 0 };
-  return { ice: 4, locks: inCycle >= 25 ? 3 : 2 };
+  const inCycle = ((level - 1) % 40) + 1;
+  const tier = Math.floor((inCycle - 1) / 10); // 0..3 локация внутри круга
+  const cycle = Math.floor((level - 1) / 40) + 1;
+  const cycleIce = cycle > 1 ? 2 : 0;
+  if (tier === 0) return { ice: cycleIce, locks: 0 };
+  if (tier === 1) return { ice: Math.min(3 + Math.floor(((inCycle - 11) % 10) / 3), 5), locks: 0 };
+  if (tier === 2) return { ice: 4, locks: 2 };
+  return { ice: 5, locks: 3 };
 }
 
 function shuffled<T>(arr: T[], rng: () => number): T[] {

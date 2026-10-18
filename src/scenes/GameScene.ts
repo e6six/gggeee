@@ -101,6 +101,7 @@ export class GameScene extends Phaser.Scene {
   private gameOver: 'win' | 'lose' | null = null;
 
   private bgImage!: Phaser.GameObjects.Image;
+  private bgArt!: Phaser.GameObjects.Image;
 
   // Экран победы «открытка региона»
   private winPanel!: Phaser.GameObjects.Container;
@@ -151,6 +152,10 @@ export class GameScene extends Phaser.Scene {
   private mapTitle!: Phaser.GameObjects.Text;
   private mapClose!: Phaser.GameObjects.Text;
   private mapContent!: Phaser.GameObjects.Container;
+  private mapCycle = 1;
+  private mapPrev!: Phaser.GameObjects.Text;
+  private mapNext!: Phaser.GameObjects.Text;
+  private mapCycleText!: Phaser.GameObjects.Text;
   private mapImage!: Phaser.GameObjects.Image;
 
   // Настройки
@@ -188,6 +193,7 @@ export class GameScene extends Phaser.Scene {
     this.soundOn = localStorage.getItem('solitaire-journey.sound') !== 'off';
 
     this.bgImage = this.add.image(0, 0, REGIONS[0].bgKey).setDepth(-10);
+    this.bgArt = this.add.image(0, 0, REGIONS[0].bgKey).setDepth(-9);
     this.deco = this.add.graphics();
     this.hudBg = this.add.graphics();
     this.buildHud();
@@ -283,13 +289,17 @@ export class GameScene extends Phaser.Scene {
         fontSize: '17px',
         color: '#f0c94a',
         fontStyle: 'bold',
+        backgroundColor: '#10251cd9',
+        padding: { x: 12, y: 5 },
       })
       .setOrigin(0.5, 0);
     this.scoreText = this.add
-      .text(0, 136, '', {
+      .text(0, 140, '', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '15px',
-        color: '#b9d3a8',
+        color: '#dcebd2',
+        backgroundColor: '#10251cb8',
+        padding: { x: 10, y: 4 },
       })
       .setOrigin(0.5, 0);
   }
@@ -357,7 +367,13 @@ export class GameScene extends Phaser.Scene {
       .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '20px', color: '#ffffff', fontStyle: 'bold' })
       .setOrigin(0.5);
     const stockTitle = this.add
-      .text(0, 0, 'Колода', { fontFamily: 'Arial, sans-serif', fontSize: '14px', color: '#b9d3a8' })
+      .text(0, 0, 'Колода', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        color: '#e8f0e4',
+        backgroundColor: '#10251cd9',
+        padding: { x: 8, y: 3 },
+      })
       .setOrigin(0.5)
       .setName('stockTitle');
     this.stockView = this.add.container(0, 0, [stockBg, this.stockBack, this.stockLabel, stockTitle]);
@@ -375,7 +391,13 @@ export class GameScene extends Phaser.Scene {
       .text(0, 10, '', { fontFamily: 'Arial, sans-serif', color: '#20301f' })
       .setOrigin(0.5);
     const wasteTitle = this.add
-      .text(0, 0, 'Сброс', { fontFamily: 'Arial, sans-serif', fontSize: '14px', color: '#b9d3a8' })
+      .text(0, 0, 'Сброс', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        color: '#e8f0e4',
+        backgroundColor: '#10251cd9',
+        padding: { x: 8, y: 3 },
+      })
       .setOrigin(0.5)
       .setName('wasteTitle');
     this.wasteView = this.add.container(0, 0, [wasteBg, this.wasteLabel, this.wasteSuit, wasteTitle]);
@@ -384,8 +406,10 @@ export class GameScene extends Phaser.Scene {
       .text(0, 0, '', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '16px',
-        color: '#b9d3a8',
+        color: '#e8f0e4',
+        backgroundColor: '#10251cd9',
         align: 'center',
+        padding: { x: 12, y: 7 },
         wordWrap: { width: 640 },
       })
       .setOrigin(0.5, 0);
@@ -942,27 +966,96 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
     this.mapClose.on('pointerdown', () => this.toggleMap(false));
+    const arrowStyle = {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '22px',
+      color: '#10251c',
+      backgroundColor: '#f0c94a',
+      fontStyle: 'bold',
+      padding: { x: 14, y: 8 },
+    } as const;
+    this.mapPrev = this.add.text(0, 0, '◀', arrowStyle).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    this.mapPrev.on('pointerdown', () => {
+      this.mapCycle = Math.max(1, this.mapCycle - 1);
+      this.rebuildMap();
+    });
+    this.mapNext = this.add.text(0, 0, '▶', arrowStyle).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    this.mapNext.on('pointerdown', () => {
+      const maxCycle = regionForLevel(this.progress.level).cycle;
+      this.mapCycle = Math.min(maxCycle, this.mapCycle + 1);
+      this.rebuildMap();
+    });
+    this.mapCycleText = this.add
+      .text(0, 0, '', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '15px',
+        color: '#f5e9c9',
+        backgroundColor: '#10251c',
+        fontStyle: 'bold',
+        padding: { x: 12, y: 6 },
+      })
+      .setOrigin(0.5);
     this.mapPanel = this.add
-      .container(0, 0, [this.mapOverlay, this.mapImage, this.mapBox, this.mapTitle, this.mapContent, this.mapClose])
+      .container(0, 0, [
+        this.mapOverlay,
+        this.mapImage,
+        this.mapBox,
+        this.mapTitle,
+        this.mapPrev,
+        this.mapNext,
+        this.mapCycleText,
+        this.mapContent,
+        this.mapClose,
+      ])
       .setDepth(50)
       .setVisible(false);
   }
 
   private toggleMap(open: boolean): void {
-    if (open) this.rebuildMap();
+    if (open) {
+      this.mapCycle = regionForLevel(this.currentLevel).cycle;
+      this.rebuildMap();
+    }
     this.mapPanel.setVisible(open);
   }
 
-  /** Узлы маршрута: змейка 6×5 снизу вверх по карте (доли от рамки карты). */
+  /**
+   * Маршрут по островам картинки карты (40 узлов, 4 локации × 10):
+   * Пустыня (запад) → Пагода (юго-восток) → Башня (северо-восток) → Горы (северо-запад).
+   * Координаты — доли от рамки карты, кластеры лежат на своих островах.
+   */
   private routePoints(): { fx: number; fy: number }[] {
-    const pts: { fx: number; fy: number }[] = [];
-    for (let row = 0; row < 6; row++) {
-      const fy = 0.84 - row * 0.132;
-      const xs = [0.16, 0.33, 0.5, 0.67, 0.84];
-      if (row % 2 === 1) xs.reverse();
-      for (const fx of xs) pts.push({ fx, fy });
-    }
-    return pts;
+    const clusters: { fx: number; fy: number }[][] = [
+      // Пустыня с пирамидами
+      [
+        { fx: 0.15, fy: 0.84 }, { fx: 0.25, fy: 0.88 }, { fx: 0.34, fy: 0.82 },
+        { fx: 0.38, fy: 0.72 }, { fx: 0.28, fy: 0.68 }, { fx: 0.18, fy: 0.72 },
+        { fx: 0.13, fy: 0.62 }, { fx: 0.22, fy: 0.57 }, { fx: 0.32, fy: 0.6 },
+        { fx: 0.42, fy: 0.5 },
+      ],
+      // Пагода у осенней горы
+      [
+        { fx: 0.58, fy: 0.82 }, { fx: 0.68, fy: 0.86 }, { fx: 0.78, fy: 0.8 },
+        { fx: 0.86, fy: 0.72 }, { fx: 0.76, fy: 0.68 }, { fx: 0.66, fy: 0.72 },
+        { fx: 0.6, fy: 0.62 }, { fx: 0.7, fy: 0.57 }, { fx: 0.8, fy: 0.6 },
+        { fx: 0.88, fy: 0.5 },
+      ],
+      // Башня над водопадом
+      [
+        { fx: 0.86, fy: 0.44 }, { fx: 0.76, fy: 0.4 }, { fx: 0.66, fy: 0.44 },
+        { fx: 0.58, fy: 0.36 }, { fx: 0.68, fy: 0.31 }, { fx: 0.78, fy: 0.34 },
+        { fx: 0.87, fy: 0.27 }, { fx: 0.78, fy: 0.2 }, { fx: 0.68, fy: 0.24 },
+        { fx: 0.58, fy: 0.16 },
+      ],
+      // Зелёные горы и озеро
+      [
+        { fx: 0.38, fy: 0.18 }, { fx: 0.3, fy: 0.13 }, { fx: 0.22, fy: 0.18 },
+        { fx: 0.13, fy: 0.12 }, { fx: 0.16, fy: 0.24 }, { fx: 0.25, fy: 0.29 },
+        { fx: 0.34, fy: 0.24 }, { fx: 0.38, fy: 0.33 }, { fx: 0.28, fy: 0.37 },
+        { fx: 0.18, fy: 0.33 },
+      ],
+    ];
+    return clusters.flat();
   }
 
   private rebuildMap(): void {
@@ -993,7 +1086,14 @@ export class GameScene extends Phaser.Scene {
       x: left + pt.fx * boxW,
       y: top + pt.fy * boxH,
     }));
-    const cycleBase = Math.floor((this.currentLevel - 1) / 30) * 30;
+    const cycleBase = (this.mapCycle - 1) * 40;
+    this.mapPrev.setPosition(left + 44, top + 34);
+    this.mapNext.setPosition(left + boxW - 44, top + 34);
+    this.mapCycleText.setText(`Круг ${this.mapCycle} · уровни ${cycleBase + 1}–${cycleBase + 40}`);
+    this.mapCycleText.setPosition(cx, top + 72);
+    const maxCycle = regionForLevel(this.progress.level).cycle;
+    this.mapPrev.setAlpha(this.mapCycle > 1 ? 1 : 0.35);
+    this.mapNext.setAlpha(this.mapCycle < maxCycle ? 1 : 0.35);
 
     // Линия пути: пройденное — золото, впереди — пунктир.
     const route = this.add.graphics();
@@ -1015,9 +1115,15 @@ export class GameScene extends Phaser.Scene {
     }
     this.mapContent.add(route);
 
-    // Подписи регионов у их первых узлов.
+    // Подписи локаций — у своих островов, а не у строк маршрута.
+    const labelPos = [
+      { fx: 0.22, fy: 0.475 },
+      { fx: 0.72, fy: 0.54 },
+      { fx: 0.72, fy: 0.475 },
+      { fx: 0.13, fy: 0.415 },
+    ];
     REGIONS.forEach((region, r) => {
-      const pt = pts[r * 10];
+      const pt = { x: left + labelPos[r].fx * boxW, y: top + labelPos[r].fy * boxH };
       const label = this.add
         .text(pt.x, pt.y - 40 * k, region.name, {
           fontFamily: 'Arial, sans-serif',
@@ -1071,15 +1177,20 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    // Легенда — в правой части экрана: если рядом с картой есть место
+    // (широкий экран), уезжает вправо от карты; на узком — в правый низ карты.
     const legend = this.add
-      .text(cx, top + boxH - 74, 'Золотая линия — ваш путь · 📍 — вы здесь · тап по узлу — играть', {
+      .text(0, 0, 'Золото — ваш путь · 📍 — вы здесь\nТап по открытому узлу — играть', {
         fontFamily: 'Arial, sans-serif',
-        fontSize: `${Math.round(14 * k)}px`,
+        fontSize: `${Math.round(13 * k)}px`,
         color: '#f5e9c9',
         backgroundColor: '#10251c',
-        padding: { x: 12, y: 6 },
+        align: 'right',
+        padding: { x: 12, y: 7 },
       })
-      .setOrigin(0.5);
+      .setOrigin(1, 0.5);
+    if (left > 260) legend.setPosition(W - 16, cy);
+    else legend.setPosition(left + boxW - 14, top + boxH - 150);
     this.mapContent.add(legend);
   }
 
@@ -1209,15 +1320,25 @@ export class GameScene extends Phaser.Scene {
 
   // --- Адаптивная вёрстка ------------------------------------------------------
 
+  /**
+   * Фон региона в два слоя, чтобы картинка не обрезалась ни в каком окне:
+   * нижний — cover-подложка на весь экран (заполняет края, приглушена),
+   * верхний — вся картинка целиком (contain, декор по краям не теряется).
+   */
   private applyBackground(): void {
     const W = this.scale.width;
     const H = this.scale.height;
     const key = regionForLevel(this.currentLevel).region.bgKey;
-    if (this.bgImage.texture.key !== key) this.bgImage.setTexture(key);
+    for (const img of [this.bgImage, this.bgArt]) {
+      if (img.texture.key !== key) img.setTexture(key);
+    }
     const tex = this.bgImage.texture.getSourceImage() as HTMLImageElement;
-    const scale = Math.max(W / tex.width, H / tex.height);
-    this.bgImage.setPosition(W / 2, H / 2).setDisplaySize(tex.width * scale, tex.height * scale);
-    this.bgImage.setAlpha(0.55);
+    const cover = Math.max(W / tex.width, H / tex.height);
+    this.bgImage.setPosition(W / 2, H / 2).setDisplaySize(tex.width * cover, tex.height * cover);
+    this.bgImage.setAlpha(0.35);
+    const contain = Math.min(W / tex.width, H / tex.height);
+    this.bgArt.setPosition(W / 2, H / 2).setDisplaySize(tex.width * contain, tex.height * contain);
+    this.bgArt.setAlpha(0.6);
   }
 
   private layout(): void {
@@ -1470,9 +1591,11 @@ export class GameScene extends Phaser.Scene {
         view.suit.setVisible(true);
         view.badge.setVisible(frozen);
         view.badge.setText('❄');
+        view.badge.setFontSize(22).setColor('#0b6fa4');
+        view.badge.setPosition(this.cardW / 2 - 15, -this.cardH / 2 + 15);
         view.bg
-          .setFillStyle(frozen ? 0xcfe8f5 : 0xf7f1de)
-          .setStrokeStyle(playable ? 4 : 2, playable ? 0xf0c94a : 0x2c4a38);
+          .setFillStyle(frozen ? 0xa8d8f0 : 0xf7f1de)
+          .setStrokeStyle(playable ? 4 : 2, frozen ? 0x3d9bdc : playable ? 0xf0c94a : 0x2c4a38);
         view.label.setText(RANKS[card.rank]).setColor(this.suitColor(card.suit));
         view.suit.setText(SUITS[card.suit]).setColor(this.suitColor(card.suit));
       } else if (open && !unlocked) {
@@ -1482,6 +1605,8 @@ export class GameScene extends Phaser.Scene {
         view.suit.setVisible(true);
         view.badge.setVisible(true);
         view.badge.setText('🔒');
+        view.badge.setFontSize(24).setColor('#20301f');
+        view.badge.setPosition(this.cardW / 2 - 15, -this.cardH / 2 + 15);
         view.bg.setFillStyle(0xb9c0bb).setStrokeStyle(2, 0x5a6a60);
         view.label.setText(RANKS[card.rank]).setColor('#5a6a60');
         view.suit.setText(SUITS[card.suit]).setColor('#5a6a60');
@@ -1490,8 +1615,11 @@ export class GameScene extends Phaser.Scene {
         view.back.setVisible(true);
         view.label.setVisible(false);
         view.suit.setVisible(false);
+        // Закрытый замок — крупный значок по центру рубашки, чтобы его видели сразу.
         view.badge.setVisible(card.obstacle === 'lock');
         view.badge.setText(card.obstacle === 'lock' ? '🔒' : '');
+        view.badge.setFontSize(32).setColor('#ffffff');
+        view.badge.setPosition(0, 0);
       }
     }
 

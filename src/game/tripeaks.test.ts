@@ -89,29 +89,20 @@ describe('бустер +5 карт', () => {
   });
 });
 
-describe('регионы путешествия', () => {
-  it('каждые 10 уровней — новый регион, каждые 30 — новый цикл', () => {
-    expect(regionForLevel(1).region.name).toBe('Средиземноморье');
-    expect(regionForLevel(10).indexInRegion).toBe(10);
-    expect(regionForLevel(11).region.name).toBe('Япония');
-    expect(regionForLevel(21).region.name).toBe('Старая Европа');
-    expect(regionForLevel(31).region.name).toBe('Средиземноморье');
-    expect(regionForLevel(31).cycle).toBe(2);
-  });
-});
-
 describe('препятствия и кривая сложности', () => {
-  it('по уровням: 1-10 чисто, 11-20 лёд, 21+ лёд и замки', () => {
+  it('по локациям круга: чисто → лёд → +замки → максимум; 61-й уровень не пустой', () => {
     expect(obstaclesForLevel(5)).toEqual({ ice: 0, locks: 0 });
     expect(obstaclesForLevel(15).ice).toBeGreaterThan(0);
     expect(obstaclesForLevel(15).locks).toBe(0);
-    expect(obstaclesForLevel(27)).toEqual({ ice: 4, locks: 3 });
-    expect(obstaclesForLevel(35)).toEqual({ ice: 0, locks: 0 });
+    expect(obstaclesForLevel(25)).toEqual({ ice: 4, locks: 2 });
+    expect(obstaclesForLevel(35)).toEqual({ ice: 5, locks: 3 });
+    expect(obstaclesForLevel(45).ice).toBe(2);
+    expect(obstaclesForLevel(61)).toEqual({ ice: 4, locks: 2 });
   });
 
   it('партии с препятствиями остаются проходимыми (300 сидов)', () => {
     for (let seed = 1; seed <= 300; seed++) {
-      const game = generateGame(createRng(seed * 31), obstaclesForLevel(27));
+      const game = generateGame(createRng(seed * 31), obstaclesForLevel(35));
       expect(replaySolution(game), `seed=${seed}`).toBe(true);
       const locked = game.tableau.filter((c) => c.obstacle === 'lock');
       expect(locked).toHaveLength(3);
@@ -132,5 +123,18 @@ describe('препятствия и кривая сложности', () => {
       }
     }
     expect(isUnlocked(game.tableau, idx)).toBe(true);
+  });
+});
+
+describe('регионы путешествия', () => {
+  it('локации названы по островам карты и идут по 10 уровней, круг — 40', () => {
+    expect(regionForLevel(1).region.name).toBe('Пустыня с пирамидами');
+    expect(regionForLevel(10).indexInRegion).toBe(10);
+    expect(regionForLevel(11).region.name).toBe('Пагода у осенней горы');
+    expect(regionForLevel(21).region.name).toBe('Башня над водопадом');
+    expect(regionForLevel(31).region.name).toBe('Зелёные горы и озеро');
+    expect(regionForLevel(41).region.name).toBe('Пустыня с пирамидами');
+    expect(regionForLevel(41).cycle).toBe(2);
+    expect(regionForLevel(61).region.name).toBe('Башня над водопадом');
   });
 });
