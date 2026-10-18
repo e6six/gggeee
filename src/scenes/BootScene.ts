@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { detectLang, gameReady, initSdk, isSdkAvailable } from '../yandex/sdk';
+import { detectLang, initSdk, isSdkAvailable } from '../yandex/sdk';
 import { setLang } from '../i18n';
 
 /**
@@ -20,9 +20,8 @@ export class BootScene extends Phaser.Scene {
     await initSdk();
     setLang(detectLang());
 
-    // Ассетов пока нет — игра сразу готова принимать ввод.
-    gameReady();
-
+    // LoadingAPI.ready() здесь НЕ вызываем: ассеты GameScene ещё не загружены.
+    // Готовность объявит GameScene.create(), когда поле уже на экране.
     this.scene.start('GameScene', { sdkAvailable: isSdkAvailable() });
   }
 }

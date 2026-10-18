@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { gameplayStart, gameplayStop, loadSave, storeSave } from '../yandex/sdk';
+import { gameReady, gameplayStart, gameplayStop, loadSave, storeSave } from '../yandex/sdk';
 import {
   coinsForWin,
   createRng,
@@ -18,6 +18,7 @@ interface Progress {
   totalStars: number;
   coins: number;
   boosters: { undo: number; plus5: number; wild: number };
+  daily: { lastClaim: string | null; streak: number };
 }
 
 const DEFAULT_PROGRESS: Progress = {
@@ -25,7 +26,21 @@ const DEFAULT_PROGRESS: Progress = {
   totalStars: 0,
   coins: 0,
   boosters: { undo: 3, plus5: 2, wild: 1 },
+  daily: { lastClaim: null, streak: 0 },
 };
+
+const GAME_SAVE_KEY = 'solitaire-journey.game.v1';
+
+interface GameSnapshot {
+  currentLevel: number;
+  tableau: TableauCard[];
+  stock: CardData[];
+  waste: CardData;
+  score: number;
+  streak: number;
+  bestStreak: number;
+  movesMade: boolean;
+}
 
 type BoosterKind = 'undo' | 'plus5' | 'wild';
 
@@ -174,20 +189,27 @@ export class GameScene extends Phaser.Scene {
     this.buildSettings();
     this.buildMap();
     this.buildWinScreen();
+    this.buildDaily();
     this.layout();
     this.scale.on('resize', () => this.layout());
 
     this.newGame();
+    // Ассеты загружены (preload завершён), поле построено — игра готова.
+    gameReady();
     void loadSave<Progress>(structuredClone(DEFAULT_PROGRESS)).then((saved) => {
       const merged: Progress = {
         ...structuredClone(DEFAULT_PROGRESS),
         ...saved,
         boosters: { ...DEFAULT_PROGRESS.boosters, ...(saved.boosters ?? {}) },
+        daily: { ...DEFAULT_PROGRESS.daily, ...(saved.daily ?? {}) },
       };
       this.progress = merged;
       this.currentLevel = merged.level;
-      if (merged.level > 1 || merged.totalStars > 0 || merged.coins > 0) this.newGame();
-      else this.paintBoosters();
+      if (!this.restoreGame()) {
+        if (merged.level > 1 || merged.totalStars > 0 || merged.coins > 0) this.newGame();
+        else this.paintBoosters();
+      }
+      this.maybeShowDaily();
     });
   }
 
@@ -370,6 +392,146 @@ export class GameScene extends Phaser.Scene {
     this.restartButton.on('pointerdown', () => this.onRestart());
   }
 
+  // --- Ежедневный бонус ----------------------------------------------------------
+
+  private dailyPanel!: Phaser.GameObjects.Container;
+  private pendingDaily: { coins: number; kind: BoosterKind; streak: number } | null = null;
+
+  private buildDaily(): void {
+    const overlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.6).setOrigin(0).setName('dailyOverlay');
+    const box = this.add.rectangle(0, 0, 10, 10, 0xf7f1de).setStrokeStyle(4, 0xd9b64a).setName('dailyBox');
+    const title = this.add
+      .text(0, 0, '🎁 Ежедневный бонус', { fontFamily: 'Arial, sans-serif', fontSize: '26px', color: '#20301f', fontStyle: 'bold' })
+      .setOrigin(0.5)
+      .setName('dailyTitle');
+    const text = this.add
+      .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '19px', color: '#20301f', align: 'center', lineSpacing: 10 })
+      .setOrigin(0.5)
+      .setName('dailyText');
+    const claim = this.add
+      .text(0, 0, 'Забрать', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '20px',
+        color: '#10251c',
+        backgroundColor: '#f0c94a',
+        fontStyle: 'bold',
+        padding: { x: 26, y: 13 },
+      })
+      .setOrigin(0.5)
+      .setName('dailyClaim')
+      .setInteractive({ useHandCursor: true });
+    claim.on('pointerdown', () => this.claimDaily());
+    this.dailyPanel = this.add.container(0, 0, [overlay, box, title, text, claim]).setDepth(70).setVisible(false);
+  }
+
+  private todayStr(offsetDays = 0): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    return d.toISOString().slice(0, 10);
+  }
+
+  private maybeShowDaily(): void {
+    const today = this.todayStr();
+    if (this.progress.daily.lastClaim === today) return;
+    const streak = this.progress.daily.lastClaim === this.todayStr(-1) ? this.progress.daily.streak + 1 : 1;
+    const kinds: BoosterKind[] = ['undo', 'plus5', 'wild'];
+    this.pendingDaily = {
+      coins: 25 + Math.min(streak, 7) * 5,
+      kind: kinds[(streak - 1) % kinds.length],
+      streak,
+    };
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const boxW = Math.min(480, W - 40);
+    const boxH = 340;
+    const cx = W / 2;
+    const cy = H / 2;
+    const overlay = this.dailyPanel.getByName('dailyOverlay') as Phaser.GameObjects.Rectangle;
+    overlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
+    (this.dailyPanel.getByName('dailyBox') as Phaser.GameObjects.Rectangle)
+      .setPosition(cx, cy)
+      .setSize(boxW, boxH)
+      .setDisplaySize(boxW, boxH);
+    (this.dailyPanel.getByName('dailyTitle') as Phaser.GameObjects.Text).setPosition(cx, cy - boxH / 2 + 52);
+    const boosterNames: Record<BoosterKind, string> = { undo: '↩ Отмена хода', plus5: '＋5 карт', wild: '★ Дикая карта' };
+    (this.dailyPanel.getByName('dailyText') as Phaser.GameObjects.Text)
+      .setText(`День ${streak} подряд!\n\n+${this.pendingDaily.coins} 🪙\n+1 бустер: ${boosterNames[this.pendingDaily.kind]}`)
+      .setPosition(cx, cy - 10);
+    (this.dailyPanel.getByName('dailyClaim') as Phaser.GameObjects.Text).setPosition(cx, cy + boxH / 2 - 58);
+    this.dailyPanel.setVisible(true);
+  }
+
+  private claimDaily(): void {
+    if (!this.pendingDaily) return;
+    this.progress.coins += this.pendingDaily.coins;
+    this.progress.boosters[this.pendingDaily.kind] += 1;
+    this.progress.daily = { lastClaim: this.todayStr(), streak: this.pendingDaily.streak };
+    this.pendingDaily = null;
+    void storeSave(this.progress);
+    this.dailyPanel.setVisible(false);
+    this.paintBoosters();
+    this.updateMeta();
+    this.setHint('Бонус получен! Возвращайтесь завтра за следующим.');
+  }
+
+  // --- Сохранение незаконченной партии (локально на устройстве) -------------------
+
+  private persistGame(): void {
+    if (this.gameOver || this.cards.length !== 28) return;
+    const snap: GameSnapshot = {
+      currentLevel: this.currentLevel,
+      tableau: this.cards,
+      stock: this.stock,
+      waste: this.waste,
+      score: this.score,
+      streak: this.streak,
+      bestStreak: this.bestStreak,
+      movesMade: this.movesMade,
+    };
+    try {
+      localStorage.setItem(GAME_SAVE_KEY, JSON.stringify(snap));
+    } catch {
+      /* localStorage недоступен — играем без автосейва партии */
+    }
+  }
+
+  private clearGameSave(): void {
+    try {
+      localStorage.removeItem(GAME_SAVE_KEY);
+    } catch {
+      /* noop */
+    }
+  }
+
+  private restoreGame(): boolean {
+    try {
+      const raw = localStorage.getItem(GAME_SAVE_KEY);
+      if (!raw) return false;
+      const snap = JSON.parse(raw) as GameSnapshot;
+      if (!snap.tableau || snap.tableau.length !== 28) return false;
+      this.currentLevel = snap.currentLevel;
+      this.cards = snap.tableau;
+      this.stock = snap.stock;
+      this.waste = snap.waste;
+      this.score = snap.score;
+      this.streak = snap.streak;
+      this.bestStreak = snap.bestStreak;
+      this.movesMade = snap.movesMade;
+      this.wasOpen = new Array(28).fill(false);
+      this.history = [];
+      this.wildActive = false;
+      this.gameOver = null;
+      this.cameras.main.setBackgroundColor(regionForLevel(this.currentLevel).region.bg);
+      this.applyBackground();
+      this.refresh();
+      this.updateMeta();
+      this.setHint('Партия восстановлена. Тапните по подсвеченной карте на ±1 от сброса.');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // --- Бустеры -----------------------------------------------------------------
 
   private buildFieldAction(): void {
@@ -479,6 +641,7 @@ export class GameScene extends Phaser.Scene {
     void storeSave(this.progress);
     this.paintBoosters();
     this.refresh();
+    this.persistGame();
     this.setHint('Ход отменён.');
   }
 
@@ -490,6 +653,7 @@ export class GameScene extends Phaser.Scene {
     void storeSave(this.progress);
     this.paintBoosters();
     this.refresh();
+    this.persistGame();
     this.setHint('В колоду добавлено 5 карт цепочкой ±1.');
   }
 
@@ -1147,10 +1311,12 @@ export class GameScene extends Phaser.Scene {
 
   private afterMove(): void {
     this.refresh();
+    this.persistGame();
     const left = this.cards.filter((c) => !c.removed).length;
     if (left === 0) {
       gameplayStop();
       this.gameOver = 'win';
+      this.clearGameSave();
       if (this.currentLevel >= this.progress.level) this.progress.level = this.currentLevel + 1;
       const stars = starsForStockLeft(this.stock.length);
       const coins = coinsForWin(this.stock.length, this.bestStreak);
@@ -1171,6 +1337,7 @@ export class GameScene extends Phaser.Scene {
     if (!anyMove && this.stock.length === 0) {
       gameplayStop();
       this.gameOver = 'lose';
+      this.clearGameSave();
       this.restartButton.setText('↻ Ещё раз');
       this.setStatus('Колода пуста и ходов нет — в этот раз не вышло');
       this.setHint('«Ещё раз» — в настройках ⚙. Подсказка: не тратьте колоду, пока есть подсвеченные ходы.');
