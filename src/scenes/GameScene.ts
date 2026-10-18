@@ -182,7 +182,11 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     for (const b of CARD_BACKS) this.load.image(b.key, b.file);
-    for (const r of REGIONS) this.load.image(r.bgKey, r.bgFile);
+    for (const r of REGIONS) {
+      this.load.image(r.bgKey, r.bgFile);
+      this.load.image(`${r.bgKey}-wide`, r.bgFile.replace('.jpg', '-wide.jpg'));
+      this.load.image(`${r.bgKey}-tall`, r.bgFile.replace('.jpg', '-tall.jpg'));
+    }
     this.load.image('map-world', 'assets/bg/map-world.jpg');
     this.load.image('postcard-win', 'assets/bg/postcard-win.jpg');
   }
@@ -1321,24 +1325,23 @@ export class GameScene extends Phaser.Scene {
   // --- Адаптивная вёрстка ------------------------------------------------------
 
   /**
-   * Фон региона в два слоя, чтобы картинка не обрезалась ни в каком окне:
-   * нижний — cover-подложка на весь экран (заполняет края, приглушена),
-   * верхний — вся картинка целиком (contain, декор по краям не теряется).
+   * Фон региона одной цельной картинкой под форму экрана: для широкого окна
+   * берётся wide-вариант (1920x1080), для высокого — tall (1080x1920), иначе
+   * портретный оригинал. Варианты достроены зеркально (scripts/make-bg-
+   * variants.py), поэтому cover почти ничего не режет и декор по краям цел.
    */
   private applyBackground(): void {
     const W = this.scale.width;
     const H = this.scale.height;
-    const key = regionForLevel(this.currentLevel).region.bgKey;
-    for (const img of [this.bgImage, this.bgArt]) {
-      if (img.texture.key !== key) img.setTexture(key);
-    }
+    const aspect = W / H;
+    const base = regionForLevel(this.currentLevel).region.bgKey;
+    const key = aspect > 1.1 ? `${base}-wide` : aspect < 0.58 ? `${base}-tall` : base;
+    if (this.bgImage.texture.key !== key) this.bgImage.setTexture(key);
+    this.bgArt.setVisible(false);
     const tex = this.bgImage.texture.getSourceImage() as HTMLImageElement;
-    const cover = Math.max(W / tex.width, H / tex.height);
-    this.bgImage.setPosition(W / 2, H / 2).setDisplaySize(tex.width * cover, tex.height * cover);
-    this.bgImage.setAlpha(0.35);
-    const contain = Math.min(W / tex.width, H / tex.height);
-    this.bgArt.setPosition(W / 2, H / 2).setDisplaySize(tex.width * contain, tex.height * contain);
-    this.bgArt.setAlpha(0.6);
+    const scale = Math.max(W / tex.width, H / tex.height);
+    this.bgImage.setPosition(W / 2, H / 2).setDisplaySize(tex.width * scale, tex.height * scale);
+    this.bgImage.setAlpha(0.55);
   }
 
   private layout(): void {
