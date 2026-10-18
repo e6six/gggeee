@@ -60,6 +60,9 @@ export class GameScene extends Phaser.Scene {
 
   private backKey: string = CARD_BACKS[0].key;
   private stockBack!: Phaser.GameObjects.Image;
+  private stockBg!: Phaser.GameObjects.Rectangle;
+  private wasteBg!: Phaser.GameObjects.Rectangle;
+  private boardTop = 218;
   private stockView!: Phaser.GameObjects.Container;
   private wasteView!: Phaser.GameObjects.Container;
   private stockLabel!: Phaser.GameObjects.Text;
@@ -195,7 +198,7 @@ export class GameScene extends Phaser.Scene {
     const pitchX = this.cardW + 7;
     const pitchY = this.cardH + 14;
     const left = W / 2 - 4.5 * pitchX;
-    const top = Math.max(178, H * 0.17);
+    const top = this.boardTop;
     const rowX: number[][] = [
       [1.5, 4.5, 7.5],
       [1, 2, 4, 5, 7, 8],
@@ -232,7 +235,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildStockAndWaste(): void {
-    const stockBg = this.add.rectangle(0, 0, this.cardW, this.cardH, 0x8f2f2f).setStrokeStyle(2, 0xf5e9c9);
+    this.stockBg = this.add.rectangle(0, 0, this.cardW, this.cardH, 0x8f2f2f).setStrokeStyle(2, 0xf5e9c9);
+    const stockBg = this.stockBg;
     this.stockBack = this.add.image(0, 0, this.backKey);
     this.stockLabel = this.add
       .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '20px', color: '#ffffff', fontStyle: 'bold' })
@@ -247,7 +251,8 @@ export class GameScene extends Phaser.Scene {
     stockBg.setInteractive({ useHandCursor: true });
     stockBg.on('pointerdown', () => this.onStockTap());
 
-    const wasteBg = this.add.rectangle(0, 0, this.cardW, this.cardH, 0xf7f1de).setStrokeStyle(3, 0xf0c94a);
+    this.wasteBg = this.add.rectangle(0, 0, this.cardW, this.cardH, 0xf7f1de).setStrokeStyle(3, 0xf0c94a);
+    const wasteBg = this.wasteBg;
     this.wasteLabel = this.add
       .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontStyle: 'bold', color: '#20301f' })
       .setOrigin(0, 0);
@@ -448,7 +453,9 @@ export class GameScene extends Phaser.Scene {
     this.cardW = Phaser.Math.Clamp(Math.floor((W - 36 - 9 * 7) / 10), 46, 92);
     this.cardH = Math.round(this.cardW * 1.55);
     const pitchY = this.cardH + 14;
-    const boardTop = Math.max(178, H * 0.17);
+    // Статус (y~114) и счёт (y~140) должны остаться над полем при любом размере карт.
+    this.boardTop = 176 + this.cardH / 2;
+    const boardTop = this.boardTop;
     const boardBottom = boardTop + 3 * pitchY + this.cardH / 2;
 
     // HUD-панель сверху
@@ -485,7 +492,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Колода и сброс: крупнее полевых, по центру под полем
-    const stockY = Math.min(H - 250, boardBottom + 86);
+    this.stockBg.setSize(this.cardW, this.cardH).setDisplaySize(this.cardW, this.cardH);
+    this.wasteBg.setSize(this.cardW, this.cardH).setDisplaySize(this.cardW, this.cardH);
+    this.stockLabel.setStroke('#10251c', 5);
+    const stockY = Math.min(H - 290, boardBottom + 86);
     this.stockView.setPosition(W / 2 - 78, stockY).setScale(1.18);
     this.wasteView.setPosition(W / 2 + 78, stockY).setScale(1.18);
     const stockTitle = this.stockView.getByName('stockTitle') as Phaser.GameObjects.Text;
@@ -498,8 +508,8 @@ export class GameScene extends Phaser.Scene {
     this.wasteSuit.setFontSize(Math.round(this.cardW * 0.5));
     this.applyBack(this.stockBack);
 
-    this.hintText.setPosition(W / 2, stockY + 108).setWordWrapWidth(Math.min(680, W - 40));
-    this.restartButton.setPosition(W / 2, Math.min(H - 44, stockY + 178));
+    this.hintText.setPosition(W / 2, stockY + 128).setWordWrapWidth(Math.min(680, W - 40));
+    this.restartButton.setPosition(W / 2, Math.min(H - 44, stockY + 198));
 
     if (this.settingsPanel?.visible) this.layoutSettings();
     if (this.cards.length === 28) this.refresh();
