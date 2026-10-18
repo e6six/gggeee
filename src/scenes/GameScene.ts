@@ -80,6 +80,22 @@ export class GameScene extends Phaser.Scene {
   private bestStreak = 0;
   private gameOver: 'win' | 'lose' | null = null;
 
+  private bgImage!: Phaser.GameObjects.Image;
+
+  // Экран победы «открытка региона»
+  private winPanel!: Phaser.GameObjects.Container;
+  private winOverlay!: Phaser.GameObjects.Rectangle;
+  private winBox!: Phaser.GameObjects.Rectangle;
+  private winArt!: Phaser.GameObjects.Image;
+  private winTitle!: Phaser.GameObjects.Text;
+  private winLevel!: Phaser.GameObjects.Text;
+  private winStars: Phaser.GameObjects.Text[] = [];
+  private winStats!: Phaser.GameObjects.Text;
+  private winStamp!: Phaser.GameObjects.Text;
+  private winNext!: Phaser.GameObjects.Text;
+  private winReplay!: Phaser.GameObjects.Text;
+  private winMap!: Phaser.GameObjects.Text;
+
   // Адаптивные размеры карт (пересчитываются в layout()).
   private cardW = 62;
   private cardH = 100;
@@ -115,6 +131,7 @@ export class GameScene extends Phaser.Scene {
   private mapTitle!: Phaser.GameObjects.Text;
   private mapClose!: Phaser.GameObjects.Text;
   private mapContent!: Phaser.GameObjects.Container;
+  private mapImage!: Phaser.GameObjects.Image;
 
   // Настройки
   private settingsPanel!: Phaser.GameObjects.Container;
@@ -135,6 +152,8 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     for (const b of CARD_BACKS) this.load.image(b.key, b.file);
+    for (const r of REGIONS) this.load.image(r.bgKey, r.bgFile);
+    this.load.image('map-journey', 'assets/bg/map-journey.jpg');
   }
 
   create(): void {
@@ -142,6 +161,7 @@ export class GameScene extends Phaser.Scene {
     if (!CARD_BACKS.some((b) => b.key === this.backKey)) this.backKey = CARD_BACKS[0].key;
     this.soundOn = localStorage.getItem('solitaire-journey.sound') !== 'off';
 
+    this.bgImage = this.add.image(0, 0, REGIONS[0].bgKey).setDepth(-10);
     this.deco = this.add.graphics();
     this.hudBg = this.add.graphics();
     this.buildHud();
@@ -152,6 +172,7 @@ export class GameScene extends Phaser.Scene {
     this.buildBoosters();
     this.buildSettings();
     this.buildMap();
+    this.buildWinScreen();
     this.layout();
     this.scale.on('resize', () => this.layout());
 
@@ -661,6 +682,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
+    this.mapImage = this.add.image(0, 0, 'map-journey');
     this.mapContent = this.add.container(0, 0, []);
     this.mapClose = this.add
       .text(0, 0, '✕ Закрыть', {
@@ -675,7 +697,7 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.mapClose.on('pointerdown', () => this.toggleMap(false));
     this.mapPanel = this.add
-      .container(0, 0, [this.mapOverlay, this.mapBox, this.mapTitle, this.mapContent, this.mapClose])
+      .container(0, 0, [this.mapOverlay, this.mapImage, this.mapBox, this.mapTitle, this.mapContent, this.mapClose])
       .setDepth(50)
       .setVisible(false);
   }
@@ -694,7 +716,10 @@ export class GameScene extends Phaser.Scene {
     const top = H / 2 - boxH / 2;
     this.mapOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
     this.mapBox.setPosition(cx, H / 2).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
+    this.mapBox.setFillStyle(0x000000, 0);
+    this.mapImage.setPosition(cx, H / 2).setDisplaySize(boxW, boxH).setAlpha(0.95);
     this.mapTitle.setPosition(cx, top + 38);
+    this.mapTitle.setBackgroundColor('#10251c').setPadding(14, 8, 14, 8);
     this.mapClose.setPosition(cx, top + boxH - 40);
     this.mapContent.removeAll(true);
 
@@ -706,8 +731,10 @@ export class GameScene extends Phaser.Scene {
         .text(cx, sectionY, `${region.name}${isCurrentRegion ? '  ·  вы здесь' : ''}`, {
           fontFamily: 'Arial, sans-serif',
           fontSize: '19px',
-          color: isCurrentRegion ? '#f0c94a' : '#b9d3a8',
+          color: isCurrentRegion ? '#f0c94a' : '#e8f0e4',
+          backgroundColor: '#10251c',
           fontStyle: isCurrentRegion ? 'bold' : 'normal',
+          padding: { x: 12, y: 6 },
         })
         .setOrigin(0.5);
       this.mapContent.add(name);
@@ -741,6 +768,117 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // --- Экран победы: открытка региона -------------------------------------------
+
+  private buildWinScreen(): void {
+    this.winOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.6).setOrigin(0);
+    this.winBox = this.add.rectangle(0, 0, 10, 10, 0xf7f1de).setStrokeStyle(4, 0xd9b64a);
+    this.winArt = this.add.image(0, 0, REGIONS[0].bgKey);
+    this.winTitle = this.add
+      .text(0, 0, '🎉 Победа!', { fontFamily: 'Arial, sans-serif', fontSize: '32px', color: '#20301f', fontStyle: 'bold' })
+      .setOrigin(0.5);
+    this.winLevel = this.add
+      .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '19px', color: '#5a4632' })
+      .setOrigin(0.5);
+    this.winStars = [0, 1, 2].map(() =>
+      this.add
+        .text(0, 0, '★', { fontFamily: 'Arial, sans-serif', fontSize: '64px', color: '#d9d9d9' })
+        .setOrigin(0.5),
+    );
+    this.winStats = this.add
+      .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '18px', color: '#20301f', align: 'center', lineSpacing: 8 })
+      .setOrigin(0.5);
+    this.winStamp = this.add
+      .text(0, 0, 'ПОЛУЧЕНО ⭐', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '16px',
+        color: '#8f2f2f',
+        fontStyle: 'bold',
+        backgroundColor: '#f7f1de',
+        padding: { x: 10, y: 6 },
+      })
+      .setOrigin(0.5)
+      .setAngle(-14);
+    const btnStyle = {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '18px',
+      color: '#10251c',
+      fontStyle: 'bold',
+      padding: { x: 18, y: 12 },
+    } as const;
+    this.winNext = this.add
+      .text(0, 0, '▶ Дальше', { ...btnStyle, backgroundColor: '#f0c94a' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.winNext.on('pointerdown', () => {
+      this.currentLevel += 1;
+      this.newGame();
+    });
+    this.winReplay = this.add
+      .text(0, 0, '↻ Заново', { ...btnStyle, backgroundColor: '#8fae94' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.winReplay.on('pointerdown', () => this.newGame());
+    this.winMap = this.add
+      .text(0, 0, '🗺 Карта', { ...btnStyle, backgroundColor: '#8fae94' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    this.winMap.on('pointerdown', () => {
+      this.winPanel.setVisible(false);
+      this.toggleMap(true);
+    });
+    this.winPanel = this.add
+      .container(0, 0, [
+        this.winOverlay,
+        this.winBox,
+        this.winArt,
+        this.winTitle,
+        this.winLevel,
+        ...this.winStars,
+        this.winStats,
+        this.winStamp,
+        this.winNext,
+        this.winReplay,
+        this.winMap,
+      ])
+      .setDepth(60)
+      .setVisible(false);
+  }
+
+  private showWin(stars: number, coins: number): void {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const { region } = regionForLevel(this.currentLevel);
+    const boxW = Math.min(560, W - 40);
+    const boxH = 560;
+    const cx = W / 2;
+    const top = H / 2 - boxH / 2;
+    this.winOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
+    this.winBox.setPosition(cx, H / 2).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
+    this.winArt.setTexture(region.bgKey);
+    this.winArt.setPosition(cx, top + 158).setDisplaySize(boxW - 56, 176);
+    this.winTitle.setPosition(cx, top + 42);
+    this.winLevel.setText(`Уровень ${this.currentLevel} · ${region.name}`);
+    this.winLevel.setPosition(cx, top + 268);
+    this.winStars.forEach((star, i) => {
+      star.setPosition(cx + (i - 1) * 84, top + 330);
+      star.setColor(i < stars ? '#f0a500' : '#cfc7ae');
+      star.setScale(0);
+      this.tweens.add({ targets: star, scale: 1, duration: 350, delay: 250 + i * 280, ease: 'Back.easeOut' });
+    });
+    this.winStats.setText(
+      `Счёт: ${this.score}\nЛучшая серия: ${this.bestStreak}\nНаграда: +${coins} 🪙 и +1 бустер`,
+    );
+    this.winStats.setPosition(cx, top + 408);
+    this.winStamp.setPosition(cx + boxW / 2 - 74, top + 74);
+    this.winNext.setPosition(cx - 150, top + boxH - 52);
+    this.winReplay.setPosition(cx, top + boxH - 52);
+    this.winMap.setPosition(cx + 150, top + boxH - 52);
+    this.winPanel.setVisible(true);
+    this.winBox.setScale(0.85);
+    this.tweens.add({ targets: this.winBox, scale: 1, duration: 220, ease: 'Back.easeOut' });
+  }
+
   /** Смена рубашки: setTexture + повторный setDisplaySize (фикс «взрыва» текстур). */
   private applyBack(img: Phaser.GameObjects.Image): void {
     if (img.texture.key !== this.backKey) img.setTexture(this.backKey);
@@ -749,9 +887,21 @@ export class GameScene extends Phaser.Scene {
 
   // --- Адаптивная вёрстка ------------------------------------------------------
 
+  private applyBackground(): void {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const key = regionForLevel(this.currentLevel).region.bgKey;
+    if (this.bgImage.texture.key !== key) this.bgImage.setTexture(key);
+    const tex = this.bgImage.texture.getSourceImage() as HTMLImageElement;
+    const scale = Math.max(W / tex.width, H / tex.height);
+    this.bgImage.setPosition(W / 2, H / 2).setDisplaySize(tex.width * scale, tex.height * scale);
+    this.bgImage.setAlpha(0.55);
+  }
+
   private layout(): void {
     const W = this.scale.width;
     const H = this.scale.height;
+    this.applyBackground();
 
     // Карты: по ширине поля, но не крупнее разумного и не мельче читаемого.
     this.cardW = Phaser.Math.Clamp(Math.floor((W - 36 - 9 * 7) / 10), 46, 92);
@@ -841,6 +991,7 @@ export class GameScene extends Phaser.Scene {
   private newGame(): void {
     const seed = (Date.now() ^ (this.currentLevel * 7919)) >>> 0;
     this.cameras.main.setBackgroundColor(regionForLevel(this.currentLevel).region.bg);
+    this.applyBackground();
     const game = generateGame(createRng(seed));
     this.cards = game.tableau;
     this.stock = game.stock;
@@ -855,6 +1006,7 @@ export class GameScene extends Phaser.Scene {
     this.wildActive = false;
     this.restartButton.setText('↻ Новая игра');
     this.fieldActionButton.setVisible(false);
+    if (this.winPanel) this.winPanel.setVisible(false);
     this.paintBoosters();
     this.refresh();
     this.updateMeta();
@@ -932,7 +1084,7 @@ export class GameScene extends Phaser.Scene {
       void storeSave(this.progress);
       this.paintBoosters();
       this.restartButton.setText('▶ Следующий уровень');
-      this.fieldActionButton.setVisible(true);
+      this.showWin(stars, coins);
       this.setStatus(`🎉 Победа! ${'⭐'.repeat(stars)} +${coins} 🪙 +1 бустер`);
       this.setHint(`Уровень ${this.currentLevel} пройден. Лучшая серия: ${this.bestStreak}.`);
       this.updateMeta();
