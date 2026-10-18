@@ -153,7 +153,8 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     for (const b of CARD_BACKS) this.load.image(b.key, b.file);
     for (const r of REGIONS) this.load.image(r.bgKey, r.bgFile);
-    this.load.image('map-journey', 'assets/bg/map-journey.jpg');
+    this.load.image('map-world', 'assets/bg/map-world.jpg');
+    this.load.image('postcard-win', 'assets/bg/postcard-win.jpg');
   }
 
   create(): void {
@@ -682,7 +683,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
-    this.mapImage = this.add.image(0, 0, 'map-journey');
+    this.mapImage = this.add.image(0, 0, 'map-world');
     this.mapContent = this.add.container(0, 0, []);
     this.mapClose = this.add
       .text(0, 0, '✕ Закрыть', {
@@ -707,65 +708,128 @@ export class GameScene extends Phaser.Scene {
     this.mapPanel.setVisible(open);
   }
 
+  /** Узлы маршрута: змейка 6×5 снизу вверх по карте (доли от рамки карты). */
+  private routePoints(): { fx: number; fy: number }[] {
+    const pts: { fx: number; fy: number }[] = [];
+    for (let row = 0; row < 6; row++) {
+      const fy = 0.88 - row * 0.148;
+      const xs = [0.16, 0.33, 0.5, 0.67, 0.84];
+      if (row % 2 === 1) xs.reverse();
+      for (const fx of xs) pts.push({ fx, fy });
+    }
+    return pts;
+  }
+
   private rebuildMap(): void {
     const W = this.scale.width;
     const H = this.scale.height;
-    const boxW = Math.min(620, W - 32);
-    const boxH = Math.min(720, H - 110);
+    const boxW = Math.min(640, W - 24);
+    const boxH = Math.min(760, H - 90);
     const cx = W / 2;
-    const top = H / 2 - boxH / 2;
+    const cy = H / 2;
+    const top = cy - boxH / 2;
+    const left = cx - boxW / 2;
     this.mapOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
-    this.mapBox.setPosition(cx, H / 2).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
+    this.mapBox.setPosition(cx, cy).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
     this.mapBox.setFillStyle(0x000000, 0);
-    this.mapImage.setPosition(cx, H / 2).setDisplaySize(boxW, boxH).setAlpha(0.95);
-    this.mapTitle.setPosition(cx, top + 38);
+    this.mapImage.setPosition(cx, cy).setDisplaySize(boxW, boxH).setAlpha(1);
+    this.mapTitle.setPosition(cx, top + 34);
     this.mapTitle.setBackgroundColor('#10251c').setPadding(14, 8, 14, 8);
-    this.mapClose.setPosition(cx, top + boxH - 40);
+    this.mapClose.setPosition(cx, top + boxH - 36);
     this.mapContent.removeAll(true);
 
+    const pts = this.routePoints().map((pt) => ({
+      x: left + pt.fx * boxW,
+      y: top + pt.fy * boxH,
+    }));
     const cycleBase = Math.floor((this.currentLevel - 1) / 30) * 30;
+
+    // Линия пути: пройденное — золото, впереди — пунктир.
+    const route = this.add.graphics();
+    for (let i = 0; i < pts.length - 1; i++) {
+      const segLevel = cycleBase + i + 1;
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (segLevel < this.progress.level) {
+        route.lineStyle(6, 0xf0a500, 0.95);
+        route.lineBetween(a.x, a.y, b.x, b.y);
+      } else {
+        const dist = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
+        const steps = Math.max(2, Math.floor(dist / 16));
+        route.fillStyle(0xffffff, 0.85);
+        for (let k = 1; k < steps; k++) {
+          route.fillCircle(a.x + ((b.x - a.x) * k) / steps, a.y + ((b.y - a.y) * k) / steps, 3);
+        }
+      }
+    }
+    this.mapContent.add(route);
+
+    // Подписи регионов у их первых узлов.
     REGIONS.forEach((region, r) => {
-      const sectionY = top + 86 + r * ((boxH - 190) / 3);
-      const isCurrentRegion = regionForLevel(this.currentLevel).region.name === region.name;
-      const name = this.add
-        .text(cx, sectionY, `${region.name}${isCurrentRegion ? '  ·  вы здесь' : ''}`, {
+      const pt = pts[r * 10];
+      const label = this.add
+        .text(pt.x, pt.y - 40, region.name, {
           fontFamily: 'Arial, sans-serif',
-          fontSize: '19px',
-          color: isCurrentRegion ? '#f0c94a' : '#e8f0e4',
+          fontSize: '15px',
+          color: '#f5e9c9',
           backgroundColor: '#10251c',
-          fontStyle: isCurrentRegion ? 'bold' : 'normal',
-          padding: { x: 12, y: 6 },
+          fontStyle: 'bold',
+          padding: { x: 10, y: 5 },
         })
         .setOrigin(0.5);
-      this.mapContent.add(name);
-      for (let i = 0; i < 10; i++) {
-        const lvl = cycleBase + r * 10 + i + 1;
-        const completed = lvl < this.progress.level;
-        const frontier = lvl === this.progress.level;
-        const playing = lvl === this.currentLevel;
-        const node = this.add
-          .text(cx + ((i % 5) - 2) * 88, sectionY + 42 + Math.floor(i / 5) * 56, completed ? `⭐${lvl}` : frontier ? `▶${lvl}` : `${lvl}`, {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '16px',
-            color: playing ? '#10251c' : completed || frontier ? '#10251c' : '#9db3a4',
-            backgroundColor: playing ? '#f0c94a' : completed ? '#d9b64a' : frontier ? '#57a773' : '#44584c',
-            fontStyle: playing || frontier ? 'bold' : 'normal',
-            padding: { x: 10, y: 8 },
-          })
-          .setOrigin(0.5);
-        if (lvl <= this.progress.level) {
-          node.setInteractive({ useHandCursor: true });
-          node.on('pointerdown', () => {
-            this.currentLevel = lvl;
-            this.toggleMap(false);
-            this.newGame();
-          });
-        } else {
-          node.setAlpha(0.6);
-        }
-        this.mapContent.add(node);
+      this.mapContent.add(label);
+    });
+
+    // Узлы уровней и маркер игрока.
+    pts.forEach((pt, i) => {
+      const lvl = cycleBase + i + 1;
+      const completed = lvl < this.progress.level;
+      const frontier = lvl === this.progress.level;
+      const playing = lvl === this.currentLevel;
+      const radius = frontier ? 17 : 14;
+      const circle = this.add
+        .circle(0, 0, radius, completed ? 0xf0a500 : frontier ? 0x57a773 : 0x93a696)
+        .setStrokeStyle(playing ? 4 : 2, playing ? 0xf0c94a : 0xffffff);
+      const text = this.add
+        .text(0, 0, completed ? '★' : String(lvl), {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: completed ? '15px' : '13px',
+          color: completed || frontier ? '#10251c' : '#ffffff',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      const node = this.add.container(pt.x, pt.y, [circle, text]);
+      if (lvl <= this.progress.level) {
+        circle.setInteractive({ useHandCursor: true });
+        circle.on('pointerdown', () => {
+          this.currentLevel = lvl;
+          this.toggleMap(false);
+          this.newGame();
+        });
+      } else {
+        node.setAlpha(0.75);
+      }
+      this.mapContent.add(node);
+      if (playing) {
+        const pin = this.add.text(pt.x, pt.y - 34, '📍', { fontSize: '26px' }).setOrigin(0.5);
+        this.mapContent.add(pin);
+        this.tweens.add({ targets: pin, y: pt.y - 44, duration: 550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      }
+      if (frontier && !playing) {
+        this.tweens.add({ targets: node, scale: 1.18, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       }
     });
+
+    const legend = this.add
+      .text(cx, top + boxH - 74, 'Золотая линия — ваш путь · 📍 — вы здесь · тап по узлу — играть', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        color: '#f5e9c9',
+        backgroundColor: '#10251c',
+        padding: { x: 12, y: 6 },
+      })
+      .setOrigin(0.5);
+    this.mapContent.add(legend);
   }
 
   // --- Экран победы: открытка региона -------------------------------------------
@@ -773,7 +837,7 @@ export class GameScene extends Phaser.Scene {
   private buildWinScreen(): void {
     this.winOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.6).setOrigin(0);
     this.winBox = this.add.rectangle(0, 0, 10, 10, 0xf7f1de).setStrokeStyle(4, 0xd9b64a);
-    this.winArt = this.add.image(0, 0, REGIONS[0].bgKey);
+    this.winArt = this.add.image(0, 0, 'postcard-win');
     this.winTitle = this.add
       .text(0, 0, '🎉 Победа!', { fontFamily: 'Arial, sans-serif', fontSize: '32px', color: '#20301f', fontStyle: 'bold' })
       .setOrigin(0.5);
@@ -849,35 +913,41 @@ export class GameScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
     const { region } = regionForLevel(this.currentLevel);
-    const boxW = Math.min(560, W - 40);
-    const boxH = 560;
+    const aspect = 720 / 1290;
+    let boxW = Math.min(520, W - 32);
+    let boxH = boxW / aspect;
+    if (boxH > H - 80) {
+      boxH = H - 80;
+      boxW = boxH * aspect;
+    }
     const cx = W / 2;
-    const top = H / 2 - boxH / 2;
+    const cy = H / 2;
+    const top = cy - boxH / 2;
     this.winOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
-    this.winBox.setPosition(cx, H / 2).setSize(boxW, boxH).setDisplaySize(boxW, boxH);
-    this.winArt.setTexture(region.bgKey);
-    this.winArt.setCrop(region.artCrop.x, region.artCrop.y, region.artCrop.w, region.artCrop.h);
-    this.winArt.setPosition(cx, top + 158).setDisplaySize(boxW - 56, 176);
-    this.winTitle.setPosition(cx, top + 42);
+    this.winBox.setVisible(false);
+    this.winArt.setTexture('postcard-win');
+    this.winArt.setCrop(0, 0, 720, 1290);
+    this.winArt.setPosition(cx, cy).setDisplaySize(boxW, boxH);
+    this.winTitle.setText('🎉 Победа!');
+    this.winTitle.setColor('#7a3b00');
+    this.winTitle.setPosition(cx, top + boxH * 0.545);
     this.winLevel.setText(`Уровень ${this.currentLevel} · ${region.name}`);
-    this.winLevel.setPosition(cx, top + 268);
+    this.winLevel.setPosition(cx, top + boxH * 0.6);
     this.winStars.forEach((star, i) => {
-      star.setPosition(cx + (i - 1) * 84, top + 330);
-      star.setColor(i < stars ? '#f0a500' : '#cfc7ae');
+      star.setPosition(cx + (i - 1) * 84, top + boxH * 0.675);
+      star.setColor(i < stars ? '#f0a500' : '#d8cfb2');
       star.setScale(0);
       this.tweens.add({ targets: star, scale: 1, duration: 350, delay: 250 + i * 280, ease: 'Back.easeOut' });
     });
     this.winStats.setText(
       `Счёт: ${this.score}\nЛучшая серия: ${this.bestStreak}\nНаграда: +${coins} 🪙 и +1 бустер`,
     );
-    this.winStats.setPosition(cx, top + 408);
-    this.winStamp.setPosition(cx + boxW / 2 - 74, top + 74);
-    this.winNext.setPosition(cx - 150, top + boxH - 52);
-    this.winReplay.setPosition(cx, top + boxH - 52);
-    this.winMap.setPosition(cx + 150, top + boxH - 52);
+    this.winStats.setPosition(cx, top + boxH * 0.775);
+    this.winStamp.setPosition(cx + boxW / 2 - 66, top + boxH * 0.505);
+    this.winNext.setPosition(cx - boxW * 0.29, top + boxH * 0.915);
+    this.winReplay.setPosition(cx, top + boxH * 0.915);
+    this.winMap.setPosition(cx + boxW * 0.29, top + boxH * 0.915);
     this.winPanel.setVisible(true);
-    this.winBox.setScale(0.85);
-    this.tweens.add({ targets: this.winBox, scale: 1, duration: 220, ease: 'Back.easeOut' });
   }
 
   /** Смена рубашки: setTexture + повторный setDisplaySize (фикс «взрыва» текстур). */
