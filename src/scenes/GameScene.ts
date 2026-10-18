@@ -162,9 +162,14 @@ export class GameScene extends Phaser.Scene {
   private backButtons: Phaser.GameObjects.Text[] = [];
   private backPreviews: Phaser.GameObjects.Image[] = [];
   private soundButton!: Phaser.GameObjects.Text;
+  // DEV: тестовый переход к уровню. УБРАТЬ перед отправкой на модерацию (этап 5)!
+  private testLevel = 1;
+  private testLevelText!: Phaser.GameObjects.Text;
+  private testLabel!: Phaser.GameObjects.Text;
   private resetButton!: Phaser.GameObjects.Text;
   private closeSettingsButton!: Phaser.GameObjects.Text;
   private soundOn = true;
+  private testControls: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super('GameScene');
@@ -790,7 +795,57 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.closeSettingsButton.on('pointerdown', () => this.toggleSettings(false));
 
-    children.push(this.restartButton, this.soundButton, this.resetButton, this.closeSettingsButton);
+    // DEV-блок: степпер уровня и кнопка «Играть»
+    this.testLabel = this.add
+      .text(0, 0, '🔧 Тест: перейти к уровню (убрать перед релизом)', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        color: '#f0c94a',
+      })
+      .setOrigin(0.5);
+    const stepStyle = {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '19px',
+      color: '#10251c',
+      backgroundColor: '#8fae94',
+      fontStyle: 'bold',
+      padding: { x: 14, y: 9 },
+    } as const;
+    const minus = this.add.text(0, 0, '◀', stepStyle).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    minus.on('pointerdown', () => {
+      this.testLevel = Math.max(1, this.testLevel - 1);
+      this.paintTestLevel();
+    });
+    const plus = this.add.text(0, 0, '▶', stepStyle).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    plus.on('pointerdown', () => {
+      this.testLevel = Math.min(99, this.testLevel + 1);
+      this.paintTestLevel();
+    });
+    this.testLevelText = this.add
+      .text(0, 0, '', { fontFamily: 'Arial, sans-serif', fontSize: '19px', color: '#f5e9c9', fontStyle: 'bold' })
+      .setOrigin(0.5);
+    const play = this.add
+      .text(0, 0, 'Играть', { ...stepStyle, backgroundColor: '#f0c94a' })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    play.on('pointerdown', () => {
+      this.currentLevel = this.testLevel;
+      this.clearGameSave();
+      this.toggleSettings(false);
+      this.newGame();
+    });
+    this.testControls = [minus, plus, play];
+    children.push(
+      this.restartButton,
+      this.soundButton,
+      this.resetButton,
+      this.testLabel,
+      minus,
+      this.testLevelText,
+      plus,
+      play,
+      this.closeSettingsButton,
+    );
     this.settingsPanel = this.add.container(0, 0, children).setDepth(50).setVisible(false);
     this.paintSettings();
   }
@@ -818,8 +873,17 @@ export class GameScene extends Phaser.Scene {
     this.soundButton.setText(this.soundOn ? '🔊 Звук: включён' : '🔇 Звук: выключен');
   }
 
+  private paintTestLevel(): void {
+    const { region } = regionForLevel(this.testLevel);
+    this.testLevelText.setText(`Уровень ${this.testLevel} · ${region.name}`);
+  }
+
   private toggleSettings(open: boolean): void {
-    if (open) this.layoutSettings();
+    if (open) {
+      this.testLevel = this.currentLevel;
+      this.paintTestLevel();
+      this.layoutSettings();
+    }
     this.settingsPanel.setVisible(open);
   }
 
@@ -827,7 +891,7 @@ export class GameScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
     const boxW = Math.min(560, W - 48);
-    const boxH = 640;
+    const boxH = Math.min(760, this.scale.height - 32);
     const cx = W / 2;
     const cy = H / 2;
     this.settingsOverlay.setPosition(0, 0).setSize(W, H).setDisplaySize(W, H);
@@ -839,9 +903,14 @@ export class GameScene extends Phaser.Scene {
       this.backPreviews[idx].setPosition(x, cy - boxH / 2 + 178);
       this.backButtons[idx].setPosition(x, cy - boxH / 2 + 252);
     });
-    this.restartButton.setPosition(cx, cy + 18);
-    this.soundButton.setPosition(cx, cy + 84);
-    this.resetButton.setPosition(cx, cy + 148);
+    this.restartButton.setPosition(cx, cy + 8);
+    this.soundButton.setPosition(cx, cy + 68);
+    this.resetButton.setPosition(cx, cy + 128);
+    this.testLabel.setPosition(cx, cy + 178);
+    this.testControls[0]?.setPosition(cx - 190, cy + 218);
+    this.testLevelText.setPosition(cx - 40, cy + 218);
+    this.testControls[1]?.setPosition(cx + 96, cy + 218);
+    this.testControls[2]?.setPosition(cx + 178, cy + 218);
     this.closeSettingsButton.setPosition(cx, cy + boxH / 2 - 52);
     this.paintSettings();
   }
