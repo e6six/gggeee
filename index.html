@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Пасьянс-путешествие</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #10251c;
+      }
+      #game {
+        width: 100%;
+        height: 100%;
+      }
+      canvas {
+        display: block;
+        margin: 0 auto;
+      }
+    </style>
+    <!--
+      Яндекс Games SDK. Платформа отдаёт /sdk.js при публикации, а локально
+      его подменяет @yandex-games/sdk-dev-proxy (см. README, npm run dev:yandex).
+      Без SDK (обычный `npm run dev`) игра стартует на моках — см. src/yandex/sdk.ts.
+      ВАЖНО: путь и имя файла без пробелов и кириллицы (требование модерации).
+    -->
+    <script src="/sdk.js"></script>
+  </head>
+  <body>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
